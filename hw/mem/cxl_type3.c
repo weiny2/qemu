@@ -16,6 +16,11 @@
 #include "hw/pci/msi.h"
 #include "hw/pci/msix.h"
 
+/*
+ * Null value of all Fs suggested by IEEE RA guidelines for use of
+ * EU, OUI and CID
+ */
+#define UI64_NULL ~(0ULL)
 #define DWORD_BYTE 4
 
 /* This function will be used when cdat file is not specified */
@@ -430,7 +435,12 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     pci_config_set_class(pci_conf, PCI_CLASS_MEMORY_CXL);
 
     pcie_endpoint_cap_init(pci_dev, 0x80);
-    cxl_cstate->dvsec_offset = 0x100;
+    if (ct3d->sn != UI64_NULL) {
+        pcie_dev_ser_num_init(pci_dev, 0x100, ct3d->sn);
+        cxl_cstate->dvsec_offset = 0x100 + 0x0c;
+    } else {
+        cxl_cstate->dvsec_offset = 0x100;
+    }
 
     ct3d->cxl_cstate.pdev = pci_dev;
     build_dvsecs(ct3d);
@@ -562,6 +572,7 @@ static Property ct3_props[] = {
                      HostMemoryBackend *),
     DEFINE_PROP_LINK("lsa", CXLType3Dev, lsa, TYPE_MEMORY_BACKEND,
                      HostMemoryBackend *),
+    DEFINE_PROP_UINT64("sn", CXLType3Dev, sn, UI64_NULL),
     DEFINE_PROP_STRING("cdat", CXLType3Dev, cxl_cstate.cdat.filename),
     DEFINE_PROP_END_OF_LIST(),
 };
