@@ -239,6 +239,7 @@ typedef struct cxl_type3_dev {
     uint64_t size;
     HostMemoryBackend *hostmem;
     HostMemoryBackend *lsa;
+    uint64_t sn;
 
     /* State */
     CXLComponentState cxl_cstate;
