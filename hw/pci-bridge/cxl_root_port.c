@@ -186,6 +186,22 @@ static void cxl_rp_write_config(PCIDevice *d, uint32_t address, uint32_t val,
     uint16_t slt_ctl, slt_sta;
 
     pcie_cap_slot_get(d, &slt_ctl, &slt_sta);
+    if (ranges_overlap(address, len, PCI_BRIDGE_CONTROL, 1)) {
+        CXLRootPort *rp = CXL_ROOT_PORT(d);
+        int byte = PCI_BRIDGE_CONTROL - address;
+        uint16_t cxl_port_ctl = pci_get_word(d->config +
+                                             rp->cxl_cstate.dvsecs[EXTENSIONS_PORT_DVSEC].lob +
+                                             PORT_CONTROL_OFFSET);
+        /*
+         * If UNMASK SBR is not set, then the SBR bit in Bridge Control register
+         * has no affect (CXL 2.0 8.5.1.2 Port Control Extensions).
+         * Hence mask it out.  Hack, as we shoulld let the bit be set but
+         * ingore result.
+         */
+        if (!(cxl_port_ctl & PORT_CONTROL_UNMASK_SBR)) {
+            val &= ~(PCI_BRIDGE_CTL_BUS_RESET << (byte * 8));
+        }
+    }
     pci_bridge_write_config(d, address, val, len);
     pcie_cap_flr_write_config(d, address, val, len);
     pcie_cap_slot_write_config(d, slt_ctl, slt_sta, address, val, len);
