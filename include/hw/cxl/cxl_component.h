@@ -195,7 +195,8 @@ void cxl_component_register_block_init(Object *obj,
 void cxl_component_register_init_common(uint32_t *reg_state,
                                         enum reg_type type);
 
-void cxl_component_create_dvsec(CXLComponentState *cxl_cstate, uint16_t length,
+void cxl_component_create_dvsec(CXLComponentState *cxl_cstate,
+                                enum reg_type cxl_dev_type, uint16_t length,
                                 uint16_t type, uint8_t rev, uint8_t *body);
 
 uint8_t cxl_interleave_ways_enc(int iw, Error **errp);
