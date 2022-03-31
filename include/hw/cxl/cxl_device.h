@@ -238,6 +238,7 @@ struct CXLType3Dev {
     /* Properties */
     HostMemoryBackend *hostmem;
     HostMemoryBackend *lsa;
+    uint64_t sn;
 
     /* State */
     AddressSpace hostmem_as;
