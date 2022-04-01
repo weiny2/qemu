@@ -92,7 +92,8 @@ static void build_dvsecs(CXLComponentState *cxl)
     dvsec = (uint8_t *)&(CXLDVSECPortExtensions){
         .status = 0x1, /* Port Power Management Init Complete */
     };
-    cxl_component_create_dvsec(cxl, EXTENSIONS_PORT_DVSEC_LENGTH,
+    cxl_component_create_dvsec(cxl, CXL2_UPSTREAM_PORT,
+                               EXTENSIONS_PORT_DVSEC_LENGTH,
                                EXTENSIONS_PORT_DVSEC,
                                EXTENSIONS_PORT_DVSEC_REVID, dvsec);
     dvsec = (uint8_t *)&(CXLDVSECPortFlexBus){
@@ -101,7 +102,8 @@ static void build_dvsecs(CXLComponentState *cxl)
         .status                  = 0x26, /* same */
         .rcvd_mod_ts_data_phase1 = 0xef, /* WTF? */
     };
-    cxl_component_create_dvsec(cxl, PCIE_FLEXBUS_PORT_DVSEC_LENGTH_2_0,
+    cxl_component_create_dvsec(cxl, CXL2_UPSTREAM_PORT,
+                               PCIE_FLEXBUS_PORT_DVSEC_LENGTH_2_0,
                                PCIE_FLEXBUS_PORT_DVSEC,
                                PCIE_FLEXBUS_PORT_DVSEC_REVID_2_0, dvsec);
 
@@ -110,7 +112,8 @@ static void build_dvsecs(CXLComponentState *cxl)
         .reg0_base_lo = RBI_COMPONENT_REG | CXL_COMPONENT_REG_BAR_IDX,
         .reg0_base_hi = 0,
     };
-    cxl_component_create_dvsec(cxl, REG_LOC_DVSEC_LENGTH, REG_LOC_DVSEC,
+    cxl_component_create_dvsec(cxl, CXL2_UPSTREAM_PORT,
+                               REG_LOC_DVSEC_LENGTH, REG_LOC_DVSEC,
                                REG_LOC_DVSEC_REVID, dvsec);
 }
 

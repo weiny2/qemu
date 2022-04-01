@@ -230,9 +230,12 @@ void cxl_component_register_init_common(uint32_t *reg_state, enum reg_type type)
  *
  * This function will build the DVSEC header on behalf of the caller and then
  * copy in the remaining data for the vendor specific bits.
+ * It will also set up appropriate write masks.
  */
-void cxl_component_create_dvsec(CXLComponentState *cxl, uint16_t length,
-                                uint16_t type, uint8_t rev, uint8_t *body)
+void cxl_component_create_dvsec(CXLComponentState *cxl,
+                                enum reg_type cxl_dev_type,
+                                uint16_t length, uint16_t type, uint8_t rev,
+                                uint8_t *body)
 {
     PCIDevice *pdev = cxl->pdev;
     uint16_t offset = cxl->dvsec_offset;
@@ -250,6 +253,83 @@ void cxl_component_create_dvsec(CXLComponentState *cxl, uint16_t length,
     memcpy(pdev->config + offset + sizeof(DVSECHeader),
            body + sizeof(DVSECHeader),
            length - sizeof(DVSECHeader));
+
+    /* Configure write masks */
+    switch (type) {
+    case PCIE_CXL_DEVICE_DVSEC:
+        /* Cntrl RW Lock - so needs explicit blocking when lock is set */
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, ctrl)] = 0xFD;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, ctrl) + 1] = 0x4F;
+        /* Status is RW1CS */
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, ctrl2)] = 0x0F;
+        /* Lock is RW Once */
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, lock)] = 0x01;
+        /* range1/2_base_high/low is RW Lock */
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range1_base_hi)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range1_base_hi) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range1_base_hi) + 2] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range1_base_hi) + 3] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range1_base_lo) + 3] = 0xF0;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range2_base_hi)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range2_base_hi) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range2_base_hi) + 2] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range2_base_hi) + 3] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDevice, range2_base_lo) + 3] = 0xF0;
+        break;
+    case NON_CXL_FUNCTION_MAP_DVSEC:
+        break; /* Not yet implemented */
+    case EXTENSIONS_PORT_DVSEC:
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, control)] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, control) + 1] = 0x40;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_bus_base)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_bus_limit)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_memory_base)] = 0xF0;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_memory_base) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_memory_limit)] = 0xF0;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_memory_limit) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base)] = 0xF0;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit)] = 0xF0;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base_high)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base_high) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base_high) + 2] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_base_high) + 3] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit_high)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit_high) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit_high) + 2] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECPortExtensions, alt_prefetch_limit_high) + 3] = 0xFF;
+        break;
+    case GPF_PORT_DVSEC:
+        pdev->wmask[offset + offsetof(CXLDVSECPortGPF, phase1_ctrl)] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECPortGPF, phase1_ctrl) + 1] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECPortGPF, phase2_ctrl)] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECPortGPF, phase2_ctrl) + 1] = 0x0F;
+        break;
+    case GPF_DEVICE_DVSEC:
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_duration)] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_duration) + 1] = 0x0F;
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_power)] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_power) + 1] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_power) + 2] = 0xFF;
+        pdev->wmask[offset + offsetof(CXLDVSECDeviceGPF, phase2_power) + 3] = 0xFF;
+        break;
+    case PCIE_FLEXBUS_PORT_DVSEC:
+        switch (cxl_dev_type) {
+        case CXL2_DOWNSTREAM_PORT:
+            /* No MLD */
+            pdev->wmask[offset + offsetof(CXLDVSECPortFlexBus, ctrl)] = 0xdd;
+            break;
+        case CXL2_ROOT_PORT:
+            pdev->wmask[offset + offsetof(CXLDVSECPortFlexBus, ctrl)] = 0xfd;
+            break;
+        default: /* Registers are RO for other component types */
+            break;
+        }
+        /* There are rw1cs bits in the status register but never set currently */
+        break;
+
+    }
 
     /* Update state for future DVSEC additions */
     range_init_nofail(&cxl->dvsecs[type], cxl->dvsec_offset, length);

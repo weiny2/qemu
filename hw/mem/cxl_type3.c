@@ -314,7 +314,8 @@ static void build_dvsecs(CXLType3Dev *ct3d)
         .range1_base_hi = 0,
         .range1_base_lo = 0,
     };
-    cxl_component_create_dvsec(cxl_cstate, PCIE_CXL_DEVICE_DVSEC_LENGTH,
+    cxl_component_create_dvsec(cxl_cstate, CXL2_TYPE3_DEVICE,
+                               PCIE_CXL_DEVICE_DVSEC_LENGTH,
                                PCIE_CXL_DEVICE_DVSEC,
                                PCIE_CXL2_DEVICE_DVSEC_REVID, dvsec);
 
@@ -325,13 +326,14 @@ static void build_dvsecs(CXLType3Dev *ct3d)
         .reg1_base_lo = RBI_CXL_DEVICE_REG | CXL_DEVICE_REG_BAR_IDX,
         .reg1_base_hi = 0,
     };
-    cxl_component_create_dvsec(cxl_cstate, REG_LOC_DVSEC_LENGTH, REG_LOC_DVSEC,
+    cxl_component_create_dvsec(cxl_cstate, CXL2_TYPE3_DEVICE,
+                               REG_LOC_DVSEC_LENGTH, REG_LOC_DVSEC,
                                REG_LOC_DVSEC_REVID, dvsec);
     dvsec = (uint8_t *)&(CXLDVSECDeviceGPF){
         .phase2_duration = 0x603, /* 3 seconds */
         .phase2_power = 0x33, /* 0x33 miliwatts */
     };
-    cxl_component_create_dvsec(cxl_cstate,
+    cxl_component_create_dvsec(cxl_cstate, CXL2_TYPE3_DEVICE,
                                GPF_DEVICE_DVSEC_LENGTH, GPF_PORT_DVSEC,
                                GPF_DEVICE_DVSEC_REVID, dvsec);
 }
