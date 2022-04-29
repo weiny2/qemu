@@ -184,6 +184,8 @@ typedef struct cxl_component {
             struct PCIDevice *pdev;
         };
     };
+
+    ComplianceObject compliance;
 } CXLComponentState;
 
 void cxl_component_register_block_init(Object *obj,
