@@ -247,6 +247,8 @@ struct CXLType3Dev {
     /* DOE */
     DOECap doe_comp;
     DOECap doe_cdat;
+    uint16_t spdm_port;
+    DOECap doe_spdm;
 };
 
 #define TYPE_CXL_TYPE3 "cxl-type3"
