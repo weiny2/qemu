@@ -242,6 +242,9 @@ struct CXLType3Dev {
     AddressSpace hostmem_as;
     CXLComponentState cxl_cstate;
     CXLDeviceState cxl_dstate;
+
+    /* DOE */
+    DOECap doe_comp;
 };
 
 #define TYPE_CXL_TYPE3 "cxl-type3"
