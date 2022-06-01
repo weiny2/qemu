@@ -19,6 +19,7 @@
 #include "qemu/range.h"
 #include "qemu/typedefs.h"
 #include "hw/register.h"
+#include "qapi/error.h"
 
 enum reg_type {
     CXL2_DEVICE,
@@ -186,6 +187,7 @@ typedef struct cxl_component {
     };
 
     ComplianceObject compliance;
+    CDATObject cdat;
 } CXLComponentState;
 
 void cxl_component_register_block_init(Object *obj,
@@ -221,5 +223,8 @@ static inline hwaddr cxl_decode_ig(int ig)
 }
 
 CXLComponentState *cxl_get_hb_cstate(PCIHostState *hb);
+
+void cxl_doe_cdat_init(CXLComponentState *cxl_cstate, Error **errp);
+void cxl_doe_cdat_release(CXLComponentState *cxl_cstate);
 
 #endif
