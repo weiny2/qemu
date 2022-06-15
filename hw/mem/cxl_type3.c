@@ -379,6 +379,15 @@ static void ct3d_reg_write(void *opaque, hwaddr offset, uint64_t value,
         should_commit = FIELD_EX32(value, CXL_HDM_DECODER0_CTRL, COMMIT);
         which_hdm = 0;
         break;
+    case A_CXL_RAS_UNC_ERR_STATUS:
+    case A_CXL_RAS_COR_ERR_STATUS:
+    {
+        uint32_t rw1c = value;
+        uint32_t temp = ldl_le_p((uint8_t *)cache_mem + offset);
+        temp &= ~rw1c;
+        stl_le_p((uint8_t *)cache_mem + offset, temp);
+        return;
+    }
     default:
         break;
     }
