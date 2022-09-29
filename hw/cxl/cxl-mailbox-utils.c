@@ -72,25 +72,6 @@ enum {
         #define IDENTIFY_SWITCH_DEVICE      0x0
 };
 
-#define DEFINE_MAILBOX_HANDLER_ZEROED(name, size)                         \
-    uint16_t __zero##name = size;                                         \
-    static ret_code cmd_##name(struct cxl_cmd *cmd,                       \
-                               CXLDeviceState *cxl_dstate, uint16_t *len) \
-    {                                                                     \
-        *len = __zero##name;                                              \
-        memset(cmd->payload, 0, *len);                                    \
-        return CXL_MBOX_SUCCESS;                                          \
-    }
-#define DEFINE_MAILBOX_HANDLER_NOP(name)                                  \
-    static ret_code cmd_##name(struct cxl_cmd *cmd,                       \
-                               CXLDeviceState *cxl_dstate, uint16_t *len) \
-    {                                                                     \
-        return CXL_MBOX_SUCCESS;                                          \
-    }
-
-DEFINE_MAILBOX_HANDLER_ZEROED(events_get_interrupt_policy, 4);
-DEFINE_MAILBOX_HANDLER_NOP(events_set_interrupt_policy);
-
 static void find_cxl_usp(PCIBus *b, PCIDevice *d, void *opaque)
 {
     PCIDevice **found_dev = opaque;
@@ -341,6 +322,110 @@ static ret_code cmd_events_clear_records(struct cxl_cmd *cmd,
     cxl_event_delete_head(cxlds, log_type, log);
 
     *len = 0;
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_get_interrupt_policy(struct cxl_cmd *cmd,
+                                                CXLDeviceState *cxl_dstate,
+                                                uint16_t *len)
+{
+    struct cxl_event_interrupt_policy *policy;
+    struct cxl_event_log *log;
+
+    policy = (struct cxl_event_interrupt_policy *)cmd->payload;
+    memset(policy, 0, sizeof(*policy));
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_INFO);
+    if (log->irq_enabled) {
+        policy->info_settings = CXL_EVENT_INT_SETTING(log->irq_vec);
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_WARN);
+    if (log->irq_enabled) {
+        policy->warn_settings = CXL_EVENT_INT_SETTING(log->irq_vec);
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_FAIL);
+    if (log->irq_enabled) {
+        policy->failure_settings = CXL_EVENT_INT_SETTING(log->irq_vec);
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_FATAL);
+    if (log->irq_enabled) {
+        policy->fatal_settings = CXL_EVENT_INT_SETTING(log->irq_vec);
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_DYNAMIC_CAP);
+    if (log->irq_enabled) {
+        /* Dynamic Capacity borrows the same vector as info */
+        policy->dyn_cap_settings = CXL_INT_MSI_MSIX;
+    }
+
+    *len = sizeof(*policy);
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_set_interrupt_policy(struct cxl_cmd *cmd,
+                                                CXLDeviceState *cxl_dstate,
+                                                uint16_t *len)
+{
+    struct cxl_event_interrupt_policy *policy;
+    struct cxl_event_log *log;
+
+    policy = (struct cxl_event_interrupt_policy *)cmd->payload;
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_INFO);
+    if ((policy->info_settings & CXL_EVENT_INT_MODE_MASK) ==
+                                                    CXL_INT_MSI_MSIX) {
+        log->irq_enabled = true;
+        log->irq_vec = cxl_dstate->event_vector[CXL_EVENT_TYPE_INFO];
+    } else {
+        log->irq_enabled = false;
+        log->irq_vec = 0;
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_WARN);
+    if ((policy->warn_settings & CXL_EVENT_INT_MODE_MASK) ==
+                                                    CXL_INT_MSI_MSIX) {
+        log->irq_enabled = true;
+        log->irq_vec = cxl_dstate->event_vector[CXL_EVENT_TYPE_WARN];
+    } else {
+        log->irq_enabled = false;
+        log->irq_vec = 0;
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_FAIL);
+    if ((policy->failure_settings & CXL_EVENT_INT_MODE_MASK) ==
+                                                    CXL_INT_MSI_MSIX) {
+        log->irq_enabled = true;
+        log->irq_vec = cxl_dstate->event_vector[CXL_EVENT_TYPE_FAIL];
+    } else {
+        log->irq_enabled = false;
+        log->irq_vec = 0;
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_FATAL);
+    if ((policy->fatal_settings & CXL_EVENT_INT_MODE_MASK) ==
+                                                    CXL_INT_MSI_MSIX) {
+        log->irq_enabled = true;
+        log->irq_vec = cxl_dstate->event_vector[CXL_EVENT_TYPE_FATAL];
+    } else {
+        log->irq_enabled = false;
+        log->irq_vec = 0;
+    }
+
+    log = cxl_event_log(cxl_dstate, CXL_EVENT_TYPE_DYNAMIC_CAP);
+    if ((policy->dyn_cap_settings & CXL_EVENT_INT_MODE_MASK) ==
+                                                    CXL_INT_MSI_MSIX) {
+        log->irq_enabled = true;
+        /* Dynamic Capacity borrows the same vector as info */
+        log->irq_vec = cxl_dstate->event_vector[CXL_EVENT_TYPE_INFO];
+    } else {
+        log->irq_enabled = false;
+        log->irq_vec = 0;
+    }
+
+    *len = sizeof(*policy);
     return CXL_MBOX_SUCCESS;
 }
 
@@ -701,9 +786,11 @@ static struct cxl_cmd cxl_cmd_set[256][256] = {
     [EVENTS][CLEAR_RECORDS] = { "EVENTS_CLEAR_RECORDS",
         cmd_events_clear_records, 8, IMMEDIATE_LOG_CHANGE },
     [EVENTS][GET_INTERRUPT_POLICY] = { "EVENTS_GET_INTERRUPT_POLICY",
-        cmd_events_get_interrupt_policy, 0, 0 },
+                                      cmd_events_get_interrupt_policy, 0, 0 },
     [EVENTS][SET_INTERRUPT_POLICY] = { "EVENTS_SET_INTERRUPT_POLICY",
-        cmd_events_set_interrupt_policy, 4, IMMEDIATE_CONFIG_CHANGE },
+                                      cmd_events_set_interrupt_policy,
+                                      sizeof(struct cxl_event_interrupt_policy),
+                                      IMMEDIATE_CONFIG_CHANGE },
     [FIRMWARE_UPDATE][GET_INFO] = { "FIRMWARE_UPDATE_GET_INFO",
         cmd_firmware_update_get_info, 0, 0 },
     [TIMESTAMP][GET] = { "TIMESTAMP_GET", cmd_timestamp_get, 0, 0 },
