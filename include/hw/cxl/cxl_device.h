@@ -159,6 +159,8 @@ typedef struct CXLEvent {
 struct cxl_event_log {
     uint16_t next_handle;
     bool overflow;
+    bool irq_enabled;
+    int irq_vec;
     QSIMPLEQ_HEAD(, CXLEvent) events;
 };
 
@@ -216,6 +218,7 @@ typedef struct cxl_device_state {
     /* Move me later */
     CPMUState cpmu[CXL_NUM_CPMU_INSTANCES];
 
+    uint16_t event_vector[CXL_EVENT_TYPE_MAX];
     struct cxl_event_log event_logs[CXL_EVENT_TYPE_MAX];
 } CXLDeviceState;
 

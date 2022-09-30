@@ -13,6 +13,8 @@
 #include "qemu/bswap.h"
 #include "qemu/typedefs.h"
 #include "qemu/error-report.h"
+#include "hw/pci/msi.h"
+#include "hw/pci/msix.h"
 #include "hw/cxl/cxl.h"
 #include "hw/cxl/cxl_events.h"
 
@@ -95,4 +97,27 @@ void cxl_event_delete_head(struct cxl_event_log *log)
 
     QSIMPLEQ_REMOVE_HEAD(&log->events, node);
     g_free(entry);
+}
+
+static void cxl_event_irq_assert(PCIDevice *pdev)
+{
+    CXLType3Dev *ct3d = container_of(pdev, struct CXLType3Dev, parent_obj);
+    CXLDeviceState *cxlds = &ct3d->cxl_dstate;
+    int i;
+
+    for (i = 0; i < CXL_EVENT_TYPE_MAX; i++) {
+        struct cxl_event_log *log;
+
+        log = cxl_event_log(cxlds, i);
+        if (!log || !log->irq_enabled || cxl_event_empty(log)) {
+            continue;
+        }
+
+        /*  Notifies interrupt, legacy IRQ is not supported */
+        if (msix_enabled(pdev)) {
+            msix_notify(pdev, log->irq_vec);
+        } else if (msi_enabled(pdev)) {
+            msi_notify(pdev, log->irq_vec);
+        }
+    }
 }
