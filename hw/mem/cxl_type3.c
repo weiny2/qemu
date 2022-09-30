@@ -530,7 +530,7 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     ComponentRegisters *regs = &cxl_cstate->crb;
     MemoryRegion *mr = &regs->component_registers;
     uint8_t *pci_conf = pci_dev->config;
-    unsigned short msix_num = 4;
+    unsigned short msix_num = 8;
     int i, rc;
 
     if (!cxl_setup_memory(ct3d, errp)) {
@@ -576,6 +576,11 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     for (i = 0; i < msix_num; i++) {
         msix_vector_use(pci_dev, i);
     }
+
+    ct3d->cxl_dstate.event_vector[CXL_EVENT_TYPE_INFO] = 7;
+    ct3d->cxl_dstate.event_vector[CXL_EVENT_TYPE_WARN] = 6;
+    ct3d->cxl_dstate.event_vector[CXL_EVENT_TYPE_FAIL] = 5;
+    ct3d->cxl_dstate.event_vector[CXL_EVENT_TYPE_FATAL] = 4;
 
     /* DOE Initailization */
     pcie_doe_init(pci_dev, &ct3d->doe_cdat, 0x190, doe_cdat_prot, true, 0);
