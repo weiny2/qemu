@@ -13,6 +13,8 @@
 #include "qemu/bswap.h"
 #include "qemu/typedefs.h"
 #include "qemu/error-report.h"
+#include "hw/pci/msi.h"
+#include "hw/pci/msix.h"
 #include "hw/cxl/cxl.h"
 #include "hw/cxl/cxl_events.h"
 
@@ -35,6 +37,8 @@ void cxl_event_init(CXLDeviceState *cxlds)
         log->overflow_err_count = 0;
         log->first_overflow_timestamp = 0;
         log->last_overflow_timestamp = 0;
+        log->irq_enabled = false;
+        log->irq_vec = 0;
         QSIMPLEQ_INIT(&log->events);
     }
 }
@@ -121,4 +125,27 @@ void cxl_event_delete_head(CXLDeviceState *cxlds,
     if (cxl_event_empty(log))
         cxl_event_set_status(cxlds, log_type, false);
     g_free(entry);
+}
+
+void cxl_event_irq_assert(CXLType3Dev *ct3d)
+{
+    PCIDevice *pdev = &ct3d->parent_obj;
+    CXLDeviceState *cxlds = &ct3d->cxl_dstate;
+    int i;
+
+    for (i = 0; i < CXL_EVENT_TYPE_MAX; i++) {
+        struct cxl_event_log *log;
+
+        log = cxl_event_log(cxlds, i);
+        if (!log || !log->irq_enabled || cxl_event_empty(log)) {
+            continue;
+        }
+
+        /*  Notifies interrupt, legacy IRQ is not supported */
+        if (msix_enabled(pdev)) {
+            msix_notify(pdev, log->irq_vec);
+        } else if (msi_enabled(pdev)) {
+            msi_notify(pdev, log->irq_vec);
+        }
+    }
 }

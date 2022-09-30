@@ -162,6 +162,8 @@ struct cxl_event_log {
     uint16_t overflow_err_count;
     uint64_t first_overflow_timestamp;
     uint64_t last_overflow_timestamp;
+    bool irq_enabled;
+    int irq_vec;
     QSIMPLEQ_HEAD(, CXLEvent) events;
 };
 
@@ -219,6 +221,7 @@ typedef struct cxl_device_state {
     /* Move me later */
     CPMUState cpmu[CXL_NUM_CPMU_INSTANCES];
 
+    uint16_t event_vector[CXL_EVENT_TYPE_MAX];
     struct cxl_event_log event_logs[CXL_EVENT_TYPE_MAX];
 } CXLDeviceState;
 
@@ -414,5 +417,6 @@ void cxl_event_insert(CXLDeviceState *cxlds,
 void cxl_event_delete_head(CXLDeviceState *cxlds,
                            enum cxl_event_log_type log_type,
 			   struct cxl_event_log *log);
+void cxl_event_irq_assert(CXLType3Dev *ct3d);
 
 #endif
