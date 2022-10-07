@@ -15,7 +15,13 @@
 #include "sysemu/numa.h"
 #include "hw/cxl/cxl.h"
 #include "hw/pci/msix.h"
+#include "hw/pci/spdm.h"
 
+/*
+ * Null value of all Fs suggested by IEEE RA guidelines for use of
+ * EU, OUI and CID
+ */
+#define UI64_NULL ~(0ULL)
 #define DWORD_BYTE 4
 
 static int ct3_build_cdat_table(CDATSubHeader ***cdat_table,
@@ -203,12 +209,119 @@ static bool cxl_doe_cdat_rsp(DOECap *doe_cap)
     return true;
 }
 
+static bool cxl_doe_compliance_rsp(DOECap *doe_cap)
+{
+    CXLCompRsp *rsp = &CXL_TYPE3(doe_cap->pdev)->cxl_cstate.compliance.response;
+    CXLCompReqHeader *req = pcie_doe_get_write_mbox_ptr(doe_cap);
+    uint32_t req_len = 0, rsp_len = 0;
+    CXLCompType type = req->req_code;
+
+    switch (type) {
+    case CXL_COMP_MODE_CAP:
+        req_len = sizeof(CXLCompCapReq);
+        rsp_len = sizeof(CXLCompCapRsp);
+        rsp->cap_rsp.status = 0x0;
+        rsp->cap_rsp.available_cap_bitmask = 0;
+        rsp->cap_rsp.enabled_cap_bitmask = 0;
+        break;
+    case CXL_COMP_MODE_STATUS:
+        req_len = sizeof(CXLCompStatusReq);
+        rsp_len = sizeof(CXLCompStatusRsp);
+        rsp->status_rsp.cap_bitfield = 0;
+        rsp->status_rsp.cache_size = 0;
+        rsp->status_rsp.cache_size_units = 0;
+        break;
+    case CXL_COMP_MODE_HALT:
+        req_len = sizeof(CXLCompHaltReq);
+        rsp_len = sizeof(CXLCompHaltRsp);
+        break;
+    case CXL_COMP_MODE_MULT_WR_STREAM:
+        req_len = sizeof(CXLCompMultiWriteStreamingReq);
+        rsp_len = sizeof(CXLCompMultiWriteStreamingRsp);
+        break;
+    case CXL_COMP_MODE_PRO_CON:
+        req_len = sizeof(CXLCompProducerConsumerReq);
+        rsp_len = sizeof(CXLCompProducerConsumerRsp);
+        break;
+    case CXL_COMP_MODE_BOGUS:
+        req_len = sizeof(CXLCompBogusWritesReq);
+        rsp_len = sizeof(CXLCompBogusWritesRsp);
+        break;
+    case CXL_COMP_MODE_INJ_POISON:
+        req_len = sizeof(CXLCompInjectPoisonReq);
+        rsp_len = sizeof(CXLCompInjectPoisonRsp);
+        break;
+    case CXL_COMP_MODE_INJ_CRC:
+        req_len = sizeof(CXLCompInjectCrcReq);
+        rsp_len = sizeof(CXLCompInjectCrcRsp);
+        break;
+    case CXL_COMP_MODE_INJ_FC:
+        req_len = sizeof(CXLCompInjectFlowCtrlReq);
+        rsp_len = sizeof(CXLCompInjectFlowCtrlRsp);
+        break;
+    case CXL_COMP_MODE_TOGGLE_CACHE:
+        req_len = sizeof(CXLCompToggleCacheFlushReq);
+        rsp_len = sizeof(CXLCompToggleCacheFlushRsp);
+        break;
+    case CXL_COMP_MODE_INJ_MAC:
+        req_len = sizeof(CXLCompInjectMacDelayReq);
+        rsp_len = sizeof(CXLCompInjectMacDelayRsp);
+        break;
+    case CXL_COMP_MODE_INS_UNEXP_MAC:
+        req_len = sizeof(CXLCompInsertUnexpMacReq);
+        rsp_len = sizeof(CXLCompInsertUnexpMacRsp);
+        break;
+    case CXL_COMP_MODE_INJ_VIRAL:
+        req_len = sizeof(CXLCompInjectViralReq);
+        rsp_len = sizeof(CXLCompInjectViralRsp);
+        break;
+    case CXL_COMP_MODE_INJ_ALMP:
+        req_len = sizeof(CXLCompInjectAlmpReq);
+        rsp_len = sizeof(CXLCompInjectAlmpRsp);
+        break;
+    case CXL_COMP_MODE_IGN_ALMP:
+        req_len = sizeof(CXLCompIgnoreAlmpReq);
+        rsp_len = sizeof(CXLCompIgnoreAlmpRsp);
+        break;
+    case CXL_COMP_MODE_INJ_BIT_ERR:
+        req_len = sizeof(CXLCompInjectBitErrInFlitReq);
+        rsp_len = sizeof(CXLCompInjectBitErrInFlitRsp);
+        break;
+    default:
+        break;
+    }
+
+    /* Discard if request length mismatched */
+    if (pcie_doe_get_obj_len(req) < DIV_ROUND_UP(req_len, DWORD_BYTE)) {
+        return false;
+    }
+
+    /* Common fields for each compliance type */
+    rsp->header.doe_header.vendor_id = CXL_VENDOR_ID;
+    rsp->header.doe_header.data_obj_type = CXL_DOE_COMPLIANCE;
+    rsp->header.doe_header.length = DIV_ROUND_UP(rsp_len, DWORD_BYTE);
+    rsp->header.rsp_code = type;
+    rsp->header.version = 0x1;
+    rsp->header.length = rsp_len;
+
+    memcpy(doe_cap->read_mbox, rsp, rsp_len);
+
+    doe_cap->read_mbox_len += rsp->header.doe_header.length;
+
+    return true;
+}
+
 static uint32_t ct3d_config_read(PCIDevice *pci_dev, uint32_t addr, int size)
 {
     CXLType3Dev *ct3d = CXL_TYPE3(pci_dev);
     uint32_t val;
 
     if (pcie_doe_read_config(&ct3d->doe_cdat, addr, size, &val)) {
+        return val;
+    } else if (pcie_doe_read_config(&ct3d->doe_comp, addr, size, &val)) {
+        return val;
+    } else if (ct3d->spdm_port &&
+               pcie_doe_read_config(&ct3d->doe_spdm, addr, size, &val)) {
         return val;
     }
 
@@ -220,7 +333,11 @@ static void ct3d_config_write(PCIDevice *pci_dev, uint32_t addr, uint32_t val,
 {
     CXLType3Dev *ct3d = CXL_TYPE3(pci_dev);
 
+    if (ct3d->spdm_port) {
+        pcie_doe_write_config(&ct3d->doe_spdm, addr, val, size);
+    }
     pcie_doe_write_config(&ct3d->doe_cdat, addr, val, size);
+    pcie_doe_write_config(&ct3d->doe_comp, addr, val, size);
     pci_default_write_config(pci_dev, addr, val, size);
 }
 
@@ -354,6 +471,17 @@ static DOEProtocol doe_cdat_prot[] = {
     { }
 };
 
+static DOEProtocol doe_comp_prot[] = {
+    {CXL_VENDOR_ID, CXL_DOE_COMPLIANCE, cxl_doe_compliance_rsp},
+    { }
+};
+
+static DOEProtocol doe_spdm_prot[] = {
+    { PCI_VENDOR_ID_PCI_SIG, PCI_SIG_DOE_CMA, pcie_doe_spdm_rsp },
+    { PCI_VENDOR_ID_PCI_SIG, PCI_SIG_DOE_SECURED_CMA, pcie_doe_spdm_rsp },
+    { }
+};
+
 static void ct3_realize(PCIDevice *pci_dev, Error **errp)
 {
     CXLType3Dev *ct3d = CXL_TYPE3(pci_dev);
@@ -361,7 +489,7 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     ComponentRegisters *regs = &cxl_cstate->crb;
     MemoryRegion *mr = &regs->component_registers;
     uint8_t *pci_conf = pci_dev->config;
-    unsigned short msix_num = 1;
+    unsigned short msix_num = 3;
     int i;
 
     if (!cxl_setup_memory(ct3d, errp)) {
@@ -411,6 +539,11 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     cxl_cstate->cdat.free_cdat_table = ct3_free_cdat_table;
     cxl_cstate->cdat.private = ct3d;
     cxl_doe_cdat_init(cxl_cstate, errp);
+    pcie_doe_init(pci_dev, &ct3d->doe_comp, 0x1b0, doe_comp_prot, true, 1);
+    if (ct3d->spdm_port) {
+        pcie_doe_init(pci_dev, &ct3d->doe_spdm, 0x1d0, doe_spdm_prot, true, 2);
+        ct3d->doe_spdm.socket = spdm_sock_init(ct3d->spdm_port, errp);
+    }
 }
 
 static void ct3_exit(PCIDevice *pci_dev)
@@ -420,6 +553,7 @@ static void ct3_exit(PCIDevice *pci_dev)
     ComponentRegisters *regs = &cxl_cstate->crb;
 
     cxl_doe_cdat_release(cxl_cstate);
+    spdm_sock_fini(ct3d->doe_spdm.socket);
     g_free(regs->special_ops);
     address_space_destroy(&ct3d->hostmem_as);
 }
@@ -520,6 +654,7 @@ static Property ct3_props[] = {
                      HostMemoryBackend *),
     DEFINE_PROP_UINT64("sn", CXLType3Dev, sn, UI64_NULL),
     DEFINE_PROP_STRING("cdat", CXLType3Dev, cxl_cstate.cdat.filename),
+    DEFINE_PROP_UINT16("spdm", CXLType3Dev, spdm_port, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -578,6 +713,8 @@ static void ct3_class_init(ObjectClass *oc, void *data)
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(oc);
     CXLType3Class *cvc = CXL_TYPE3_CLASS(oc);
 
+    pc->config_write = ct3d_config_write;
+    pc->config_read = ct3d_config_read;
     pc->realize = ct3_realize;
     pc->exit = ct3_exit;
     pc->class_id = PCI_CLASS_STORAGE_EXPRESS;
