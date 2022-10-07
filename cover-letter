@@ -1,0 +1,44 @@
+Topic: cxl-ev
+Version: RFC
+Subject: QEMU CXL Provide mock CXL events and irq support
+
+CXL Event records inform the OS of various CXL device events.  Thus far CXL
+memory devices are emulated and therefore don't naturally have events which
+will occur.
+
+Add mock events and a HMP trigger mechanism to facilitate guest OS testing of
+event support.
+
+This support requires a follow on version of the event patch set.  The RFC was
+submitted and discussed here:
+
+	https://lore.kernel.org/linux-cxl/20220813053243.757363-1-ira.weiny@intel.com/
+
+I'll post the lore link to the new version shortly.
+
+Instructions for running this test.
+
+Add qmp option to qemu:
+
+	<host> $ qemu-system-x86_64 ... -qmp unix:/tmp/run_qemu_qmp_0,server,nowait ...
+
+	OR
+
+	<host> $ run_qemu.sh ... --qmp ...
+
+Enable tracing of events within the guest:
+
+	<guest> $ echo "" > /sys/kernel/tracing/trace
+	<guest> $ echo 1 > /sys/kernel/tracing/events/cxl/enable
+	<guest> $ echo 1 > /sys/kernel/tracing/tracing_on
+
+Trigger event generation and interrupts in the host:
+
+	<host> $ echo "cxl_event_inject cxl-devX" | qmp-shell -H /tmp/run_qemu_qmp_0
+
+	Where X == one of the memory devices; cxl-dev0 should work.
+
+View events on the guest:
+
+	<guest> $ cat /sys/kernel/tracing/trace
+
