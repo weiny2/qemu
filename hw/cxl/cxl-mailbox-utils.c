@@ -319,7 +319,11 @@ static ret_code cmd_timestamp_set(struct cxl_cmd *cmd,
     return CXL_MBOX_SUCCESS;
 }
 
-static QemuUUID cel_uuid;
+/* CXL 2.0: Table 169 Get Supported Logs Log Entry */
+static QemuUUID cel_uuid = {
+	.data = UUID(0x0da9c0b5, 0xbf41, 0x4b78, 0x8f, 0x79,
+		     0x96, 0xb1, 0x62, 0x3b, 0x3f, 0x17)
+};
 
 /* 8.2.9.4.1 */
 static ret_code cmd_logs_get_supported(struct cxl_cmd *cmd,
@@ -683,16 +687,14 @@ void cxl_process_mailbox(CXLDeviceState *cxl_dstate)
                      DOORBELL, 0);
 }
 
-int cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
+void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
 {
-    /* CXL 2.0: Table 169 Get Supported Logs Log Entry */
-    const char *cel_uuidstr = "0da9c0b5-bf41-4b78-8f79-96b1623b3f17";
-
     if (!switch_cci) {
         cxl_dstate->cxl_cmd_set = cxl_cmd_set;
     } else {
         cxl_dstate->cxl_cmd_set = cxl_cmd_set_sw;
     }
+
     for (int set = 0; set < 256; set++) {
         for (int cmd = 0; cmd < 256; cmd++) {
             if (cxl_dstate->cxl_cmd_set[set][cmd].handler) {
@@ -706,6 +708,4 @@ int cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
             }
         }
     }
-
-    return qemu_uuid_parse(cel_uuidstr, &cel_uuid);
 }

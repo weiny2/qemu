@@ -267,7 +267,7 @@ void cxl_device_register_init_common(CXLDeviceState *cxl_dstate)
     cxl_device_cap_init(cxl_dstate, MEMORY_DEVICE, 0x4000);
     memdev_reg_init_common(cxl_dstate);
 
-    assert(cxl_initialize_mailbox(cxl_dstate, false) == 0);
+    cxl_initialize_mailbox(cxl_dstate, false);
 }
 
 void cxl_device_register_init_swcci(CXLDeviceState *cxl_dstate)
@@ -289,5 +289,5 @@ void cxl_device_register_init_swcci(CXLDeviceState *cxl_dstate)
     cxl_device_cap_init(cxl_dstate, MEMORY_DEVICE, 0x4000);
     memdev_reg_init_common(cxl_dstate);
 
-    assert(cxl_initialize_mailbox(cxl_dstate, true) == 0);
+    cxl_initialize_mailbox(cxl_dstate, true);
 }
