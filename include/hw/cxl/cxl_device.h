@@ -246,6 +246,7 @@ struct CXLType3Dev {
 
     /* DOE */
     DOECap doe_cdat;
+    DOECap doe_comp;
 };
 
 #define TYPE_CXL_TYPE3 "cxl-type3"
