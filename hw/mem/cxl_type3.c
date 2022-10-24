@@ -363,6 +363,7 @@ static void ct3d_config_write(PCIDevice *pci_dev, uint32_t addr, uint32_t val,
     pcie_doe_write_config(&ct3d->doe_cdat, addr, val, size);
     pcie_doe_write_config(&ct3d->doe_comp, addr, val, size);
     pci_default_write_config(pci_dev, addr, val, size);
+    pcie_aer_write_config(pci_dev, addr, val, size);
 }
 
 /*
@@ -530,7 +531,7 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     MemoryRegion *mr = &regs->component_registers;
     uint8_t *pci_conf = pci_dev->config;
     unsigned short msix_num = 4;
-    int i;
+    int i, rc;
 
     if (!cxl_setup_memory(ct3d, errp)) {
         return;
@@ -591,8 +592,18 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
             goto err_free_special_ops;
         }
     }
+    pcie_cap_deverr_init(pci_dev);
+    /* Leave a bit of room for expansion */
+    rc = pcie_aer_init(pci_dev, PCI_ERR_VER, 0x200, PCI_ERR_SIZEOF, NULL);
+    if (rc) {
+        goto err_free_spdm_socket;
+    }
+
     return;
 
+err_free_spdm_socket:
+    spdm_sock_fini(ct3d->doe_spdm.socket);
+    cxl_doe_cdat_release(cxl_cstate);
 err_free_special_ops:
     g_free(regs->special_ops);
 err_address_space_free:
@@ -606,6 +617,7 @@ static void ct3_exit(PCIDevice *pci_dev)
     CXLComponentState *cxl_cstate = &ct3d->cxl_cstate;
     ComponentRegisters *regs = &cxl_cstate->crb;
 
+    pcie_aer_exit(pci_dev);
     cxl_doe_cdat_release(cxl_cstate);
     spdm_sock_fini(ct3d->doe_spdm.socket);
     g_free(regs->special_ops);
