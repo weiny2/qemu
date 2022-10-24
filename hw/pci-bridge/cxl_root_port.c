@@ -181,6 +181,8 @@ static void cxl_rp_write_config(PCIDevice *d, uint32_t address, uint32_t val,
                                 int len)
 {
     uint16_t slt_ctl, slt_sta;
+    uint32_t root_cmd =
+        pci_get_long(d->config + d->exp.aer_cap + PCI_ERR_ROOT_COMMAND);
 
     pcie_cap_slot_get(d, &slt_ctl, &slt_sta);
     if (ranges_overlap(address, len, PCI_BRIDGE_CONTROL, 1)) {
@@ -204,6 +206,7 @@ static void cxl_rp_write_config(PCIDevice *d, uint32_t address, uint32_t val,
     pcie_cap_flr_write_config(d, address, val, len);
     pcie_cap_slot_write_config(d, slt_ctl, slt_sta, address, val, len);
     pcie_aer_write_config(d, address, val, len);
+    pcie_aer_root_write_config(d, address, val, len, root_cmd);
 
     cxl_rp_dvsec_write_config(d, address, val, len);
 }
