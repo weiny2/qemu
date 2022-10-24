@@ -598,7 +598,9 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     if (rc) {
         goto err_free_spdm_socket;
     }
-
+    /* CXL RAS uses AER correct INTERNAL erorrs - so enable by default */
+    pci_set_long(pci_dev->config + 0x200 + PCI_ERR_COR_MASK,
+                 PCI_ERR_COR_MASK_DEFAULT & ~PCI_ERR_COR_INTERNAL);
     return;
 
 err_free_spdm_socket:
