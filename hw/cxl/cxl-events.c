@@ -158,3 +158,175 @@ void cxl_event_irq_assert(CXLType3Dev *ct3d)
         }
     }
 }
+
+#define CXL_EVENT_RECORD_FLAG_PERMANENT         BIT(2)
+#define CXL_EVENT_RECORD_FLAG_MAINT_NEEDED      BIT(3)
+#define CXL_EVENT_RECORD_FLAG_PERF_DEGRADED     BIT(4)
+#define CXL_EVENT_RECORD_FLAG_HW_REPLACE        BIT(5)
+
+struct cxl_event_record_raw maint_needed = {
+    .hdr = {
+        .id.data = UUID(0xDEADBEEF, 0xCAFE, 0xBABE,
+                        0xa5, 0x5a, 0xa5, 0x5a, 0xa5, 0xa5, 0x5a, 0xa5),
+        .length = sizeof(struct cxl_event_record_raw),
+        .flags[0] = CXL_EVENT_RECORD_FLAG_MAINT_NEEDED,
+        /* .handle = Set dynamically */
+        .related_handle = const_le16(0xa5b6),
+    },
+    .data = { 0xDE, 0xAD, 0xBE, 0xEF },
+};
+
+struct cxl_event_record_raw hardware_replace = {
+    .hdr = {
+        .id.data = UUID(0xBABECAFE, 0xBEEF, 0xDEAD,
+                        0xa5, 0x5a, 0xa5, 0x5a, 0xa5, 0xa5, 0x5a, 0xa5),
+        .length = sizeof(struct cxl_event_record_raw),
+        .flags[0] = CXL_EVENT_RECORD_FLAG_HW_REPLACE,
+        /* .handle = Set dynamically */
+        .related_handle = const_le16(0xb6a5),
+    },
+    .data = { 0xDE, 0xAD, 0xBE, 0xEF },
+};
+
+#define CXL_GMER_EVT_DESC_UNCORECTABLE_EVENT            BIT(0)
+#define CXL_GMER_EVT_DESC_THRESHOLD_EVENT               BIT(1)
+#define CXL_GMER_EVT_DESC_POISON_LIST_OVERFLOW          BIT(2)
+
+#define CXL_GMER_MEM_EVT_TYPE_ECC_ERROR                 0x00
+#define CXL_GMER_MEM_EVT_TYPE_INV_ADDR                  0x01
+#define CXL_GMER_MEM_EVT_TYPE_DATA_PATH_ERROR           0x02
+
+#define CXL_GMER_TRANS_UNKNOWN                          0x00
+#define CXL_GMER_TRANS_HOST_READ                        0x01
+#define CXL_GMER_TRANS_HOST_WRITE                       0x02
+#define CXL_GMER_TRANS_HOST_SCAN_MEDIA                  0x03
+#define CXL_GMER_TRANS_HOST_INJECT_POISON               0x04
+#define CXL_GMER_TRANS_INTERNAL_MEDIA_SCRUB             0x05
+#define CXL_GMER_TRANS_INTERNAL_MEDIA_MANAGEMENT        0x06
+
+#define CXL_GMER_VALID_CHANNEL                          BIT(0)
+#define CXL_GMER_VALID_RANK                             BIT(1)
+#define CXL_GMER_VALID_DEVICE                           BIT(2)
+#define CXL_GMER_VALID_COMPONENT                        BIT(3)
+
+struct cxl_event_gen_media gen_media = {
+    .hdr = {
+        .id.data = UUID(0xfbcd0a77, 0xc260, 0x417f,
+                        0x85, 0xa9, 0x08, 0x8b, 0x16, 0x21, 0xeb, 0xa6),
+        .length = sizeof(struct cxl_event_gen_media),
+        .flags[0] = CXL_EVENT_RECORD_FLAG_PERMANENT,
+        /* .handle = Set dynamically */
+        .related_handle = const_le16(0),
+    },
+    .phys_addr = const_le64(0x2000),
+    .descriptor = CXL_GMER_EVT_DESC_UNCORECTABLE_EVENT,
+    .type = CXL_GMER_MEM_EVT_TYPE_DATA_PATH_ERROR,
+    .transaction_type = CXL_GMER_TRANS_HOST_WRITE,
+    .validity_flags = { CXL_GMER_VALID_CHANNEL |
+                        CXL_GMER_VALID_RANK, 0 },
+    .channel = 1,
+    .rank = 30
+};
+
+#define CXL_DER_VALID_CHANNEL                           BIT(0)
+#define CXL_DER_VALID_RANK                              BIT(1)
+#define CXL_DER_VALID_NIBBLE                            BIT(2)
+#define CXL_DER_VALID_BANK_GROUP                        BIT(3)
+#define CXL_DER_VALID_BANK                              BIT(4)
+#define CXL_DER_VALID_ROW                               BIT(5)
+#define CXL_DER_VALID_COLUMN                            BIT(6)
+#define CXL_DER_VALID_CORRECTION_MASK                   BIT(7)
+
+struct cxl_event_dram dram = {
+    .hdr = {
+        .id.data = UUID(0x601dcbb3, 0x9c06, 0x4eab,
+                        0xb8, 0xaf, 0x4e, 0x9b, 0xfb, 0x5c, 0x96, 0x24),
+        .length = sizeof(struct cxl_event_dram),
+        .flags[0] = CXL_EVENT_RECORD_FLAG_PERF_DEGRADED,
+        /* .handle = Set dynamically */
+        .related_handle = const_le16(0),
+    },
+    .phys_addr = const_le64(0x8000),
+    .descriptor = CXL_GMER_EVT_DESC_THRESHOLD_EVENT,
+    .type = CXL_GMER_MEM_EVT_TYPE_INV_ADDR,
+    .transaction_type = CXL_GMER_TRANS_INTERNAL_MEDIA_SCRUB,
+    .validity_flags = { CXL_DER_VALID_CHANNEL |
+                        CXL_DER_VALID_BANK_GROUP |
+                        CXL_DER_VALID_BANK |
+                        CXL_DER_VALID_COLUMN, 0 },
+    .channel = 1,
+    .bank_group = 5,
+    .bank = 2,
+    .column = { 0xDE, 0xAD},
+};
+
+#define CXL_MMER_HEALTH_STATUS_CHANGE           0x00
+#define CXL_MMER_MEDIA_STATUS_CHANGE            0x01
+#define CXL_MMER_LIFE_USED_CHANGE               0x02
+#define CXL_MMER_TEMP_CHANGE                    0x03
+#define CXL_MMER_DATA_PATH_ERROR                0x04
+#define CXL_MMER_LAS_ERROR                      0x05
+
+#define CXL_DHI_HS_MAINTENANCE_NEEDED           BIT(0)
+#define CXL_DHI_HS_PERFORMANCE_DEGRADED         BIT(1)
+#define CXL_DHI_HS_HW_REPLACEMENT_NEEDED        BIT(2)
+
+#define CXL_DHI_MS_NORMAL                                    0x00
+#define CXL_DHI_MS_NOT_READY                                 0x01
+#define CXL_DHI_MS_WRITE_PERSISTENCY_LOST                    0x02
+#define CXL_DHI_MS_ALL_DATA_LOST                             0x03
+#define CXL_DHI_MS_WRITE_PERSISTENCY_LOSS_EVENT_POWER_LOSS   0x04
+#define CXL_DHI_MS_WRITE_PERSISTENCY_LOSS_EVENT_SHUTDOWN     0x05
+#define CXL_DHI_MS_WRITE_PERSISTENCY_LOSS_IMMINENT           0x06
+#define CXL_DHI_MS_WRITE_ALL_DATA_LOSS_EVENT_POWER_LOSS      0x07
+#define CXL_DHI_MS_WRITE_ALL_DATA_LOSS_EVENT_SHUTDOWN        0x08
+#define CXL_DHI_MS_WRITE_ALL_DATA_LOSS_IMMINENT              0x09
+
+#define CXL_DHI_AS_NORMAL               0x0
+#define CXL_DHI_AS_WARNING              0x1
+#define CXL_DHI_AS_CRITICAL             0x2
+
+#define CXL_DHI_AS_LIFE_USED(as)        (as & 0x3)
+#define CXL_DHI_AS_DEV_TEMP(as)         ((as & 0xC) >> 2)
+#define CXL_DHI_AS_COR_VOL_ERR_CNT(as)  ((as & 0x10) >> 4)
+#define CXL_DHI_AS_COR_PER_ERR_CNT(as)  ((as & 0x20) >> 5)
+
+struct cxl_event_mem_module mem_module = {
+    .hdr = {
+        .id.data = UUID(0xfe927475, 0xdd59, 0x4339,
+                        0xa5, 0x86, 0x79, 0xba, 0xb1, 0x13, 0xb7, 0x74),
+        .length = sizeof(struct cxl_event_mem_module),
+        /* .handle = Set dynamically */
+        .related_handle = const_le16(0),
+    },
+    .event_type = CXL_MMER_TEMP_CHANGE,
+    .info = {
+        .health_status = CXL_DHI_HS_PERFORMANCE_DEGRADED,
+        .media_status = CXL_DHI_MS_ALL_DATA_LOST,
+        .add_status = (CXL_DHI_AS_CRITICAL << 2) |
+                       (CXL_DHI_AS_WARNING << 4) |
+                       (CXL_DHI_AS_WARNING << 5),
+        .device_temp = { 0xDE, 0xAD},
+        .dirty_shutdown_cnt = { 0xde, 0xad, 0xbe, 0xef },
+        .cor_vol_err_cnt = { 0xde, 0xad, 0xbe, 0xef },
+        .cor_per_err_cnt = { 0xde, 0xad, 0xbe, 0xef },
+    }
+};
+
+void cxl_mock_add_event_logs(CXLDeviceState *cxlds)
+{
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_INFO, &maint_needed);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_INFO, (struct cxl_event_record_raw *)&gen_media);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_INFO, (struct cxl_event_record_raw *)&mem_module);
+
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, &maint_needed);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, &hardware_replace);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, (struct cxl_event_record_raw *)&dram);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, (struct cxl_event_record_raw *)&gen_media);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, (struct cxl_event_record_raw *)&mem_module);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, &hardware_replace);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FAIL, (struct cxl_event_record_raw *)&dram);
+
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FATAL, &hardware_replace);
+    cxl_event_insert(cxlds, CXL_EVENT_TYPE_FATAL, (struct cxl_event_record_raw *)&dram);
+}
