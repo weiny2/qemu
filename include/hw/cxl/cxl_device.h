@@ -412,4 +412,6 @@ void cxl_event_insert(struct cxl_event_log *log,
                       struct cxl_event_record_raw *event);
 void cxl_event_delete_head(struct cxl_event_log *log);
 
+void cxl_mock_add_event_logs(CXLDeviceState *cxlds);
+
 #endif
