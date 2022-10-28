@@ -300,6 +300,7 @@ void cxl_device_register_init_common(CXLDeviceState *cxl_dstate)
     memdev_reg_init_common(cxl_dstate);
 
     cxl_initialize_mailbox(cxl_dstate, false);
+    cxl_mock_add_event_logs(cxl_dstate);
 }
 
 void cxl_device_register_init_swcci(CXLDeviceState *cxl_dstate)

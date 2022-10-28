@@ -419,4 +419,6 @@ void cxl_event_delete_head(CXLDeviceState *cxlds,
 			   struct cxl_event_log *log);
 void cxl_event_irq_assert(CXLType3Dev *ct3d);
 
+void cxl_mock_add_event_logs(CXLDeviceState *cxlds);
+
 #endif
