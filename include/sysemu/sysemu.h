@@ -64,6 +64,9 @@ extern unsigned int nb_prom_envs;
 /* pcie aer error injection */
 void hmp_pcie_aer_inject_error(Monitor *mon, const QDict *qdict);
 
+/* CXL */
+void hmp_cxl_event_inject(Monitor *mon, const QDict *qdict);
+
 /* serial ports */
 
 /* Return the Chardev for serial port i, or NULL if none */
