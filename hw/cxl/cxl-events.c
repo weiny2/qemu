@@ -10,9 +10,13 @@
 #include <stdint.h>
 
 #include "qemu/osdep.h"
+#include "sysemu/sysemu.h"
+#include "monitor/monitor.h"
 #include "qemu/bswap.h"
 #include "qemu/typedefs.h"
 #include "qemu/error-report.h"
+#include "qapi/qmp/qdict.h"
+#include "hw/pci/pci.h"
 #include "hw/pci/msi.h"
 #include "hw/pci/msix.h"
 #include "hw/cxl/cxl.h"
@@ -299,4 +303,37 @@ void cxl_mock_add_event_logs(CXLDeviceState *cxlds)
     cxl_event_insert(log, &hardware_replace);
     cxl_event_insert(log, (struct cxl_event_record_raw *)&dram);
     cxl_event_set_status(cxlds, CXL_EVENT_TYPE_FATAL, true);
+}
+
+static int do_cxl_event_inject(Monitor *mon, const QDict *qdict)
+{
+    const char *id = qdict_get_str(qdict, "id");
+    CXLType3Dev *ct3d;
+    PCIDevice *pdev;
+    int ret;
+
+    ret = pci_qdev_find_device(id, &pdev);
+    if (ret < 0) {
+        monitor_printf(mon,
+                       "id or cxl device path is invalid or device not "
+                       "found. %s\n", id);
+        return ret;
+    }
+
+    ct3d = container_of(pdev, struct CXLType3Dev, parent_obj);
+    cxl_mock_add_event_logs(&ct3d->cxl_dstate);
+
+    cxl_event_irq_assert(pdev);
+    return 0;
+}
+
+void hmp_cxl_event_inject(Monitor *mon, const QDict *qdict)
+{
+    const char *id = qdict_get_str(qdict, "id");
+
+    if (do_cxl_event_inject(mon, qdict) < 0) {
+        return;
+    }
+
+    monitor_printf(mon, "OK id: %s\n", id);
 }
