@@ -1274,6 +1274,20 @@ SRST
 ERST
 
     {
+        .name       = "cxl_event_inject",
+        .args_type  = "id:s",
+        .params     = "id <error_status>",
+        .help       = "inject cxl events and interrupt\n\t\t\t"
+                      "<id> = qdev device id\n\t\t\t",
+        .cmd        = hmp_cxl_event_inject,
+    },
+
+SRST
+``cxl_event_inject``
+  Inject CXL Events
+ERST
+
+    {
         .name       = "netdev_add",
         .args_type  = "netdev:O",
         .params     = "[user|tap|socket|vde|bridge|hubport|netmap|vhost-user"
