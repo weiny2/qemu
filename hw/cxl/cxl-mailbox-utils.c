@@ -9,6 +9,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/cxl/cxl.h"
+#include "hw/cxl/cxl_events.h"
 #include "hw/pci/pci.h"
 #include "hw/pci-bridge/cxl_upstream_port.h"
 #include "qemu/cutils.h"
@@ -87,8 +88,6 @@ enum {
         return CXL_MBOX_SUCCESS;                                          \
     }
 
-DEFINE_MAILBOX_HANDLER_ZEROED(events_get_records, 0x20);
-DEFINE_MAILBOX_HANDLER_NOP(events_clear_records);
 DEFINE_MAILBOX_HANDLER_ZEROED(events_get_interrupt_policy, 4);
 DEFINE_MAILBOX_HANDLER_NOP(events_set_interrupt_policy);
 
@@ -247,6 +246,101 @@ static ret_code cmd_infostat_bg_op_sts(struct cxl_cmd *cmd,
     memset(bg_op_status, 0, sizeof(*bg_op_status));
     /* No support yet for background operations so status all 0 */
     *len = sizeof(*bg_op_status);
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_get_records(struct cxl_cmd *cmd,
+                                       CXLDeviceState *cxlds,
+                                       uint16_t *len)
+{
+    struct cxl_get_event_payload *pl;
+    struct cxl_event_log *log;
+    uint16_t nr_overflow;
+    uint8_t log_type;
+    CXLEvent *entry;
+
+    if (cmd->in < sizeof(log_type)) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    log_type = *((uint8_t *)cmd->payload);
+    if (log_type >= CXL_EVENT_TYPE_MAX) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    pl = (struct cxl_get_event_payload *)cmd->payload;
+
+    log = cxl_event_log(cxlds, log_type);
+    if (!log || cxl_event_empty(log)) {
+        goto no_data;
+    }
+
+    memset(pl, 0, sizeof(*pl));
+    pl->record_count = const_le16(1);
+
+    if (cxl_event_count(log) > 1) {
+        pl->flags |= CXL_GET_EVENT_FLAG_MORE_RECORDS;
+    }
+
+    nr_overflow = cxl_event_overflow(log);
+    if (nr_overflow) {
+        pl->flags |= CXL_GET_EVENT_FLAG_OVERFLOW;
+        pl->overflow_err_count = cpu_to_le16(log->overflow_err_count);
+        pl->first_overflow_timestamp = cpu_to_le64(log->first_overflow_timestamp);
+        pl->last_overflow_timestamp = cpu_to_le64(log->last_overflow_timestamp);
+    }
+
+    /* FIXME return more than 1 record */
+    entry = cxl_event_get_head(log);
+    memcpy(&pl->record, &entry->data, sizeof(pl->record));
+    *len = sizeof(pl->record);
+    return CXL_MBOX_SUCCESS;
+
+no_data:
+    *len = sizeof(*pl) - sizeof(pl->record);
+    memset(pl, 0, *len);
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_clear_records(struct cxl_cmd *cmd,
+                                         CXLDeviceState *cxlds,
+                                         uint16_t *len)
+{
+    struct cxl_mbox_clear_event_payload *pl;
+    struct cxl_event_log *log;
+    uint8_t log_type;
+    CXLEvent *entry;
+
+    pl = (struct cxl_mbox_clear_event_payload *)cmd->payload;
+    log_type = pl->event_log;
+
+    /* FIXME Don't handle more than 1 record at a time */
+    if (pl->nr_recs != 1) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    if (log_type >= CXL_EVENT_TYPE_MAX) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    log = cxl_event_log(cxlds, log_type);
+    if (!log) {
+        return CXL_MBOX_SUCCESS;
+    }
+
+    /* FIXME loop through more than 1 handle */
+    entry = cxl_event_get_head(log);
+    /*
+     * The current code clears events as they are read.  Test that behavior
+     * only; don't support clearning from the middle of the log
+     * NOTE: Both are in little endian.
+     */
+    if (entry->data.hdr.handle != pl->handle) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+    cxl_event_delete_head(cxlds, log_type, log);
+
+    *len = 0;
     return CXL_MBOX_SUCCESS;
 }
 
@@ -605,7 +699,7 @@ static struct cxl_cmd cxl_cmd_set[256][256] = {
     [EVENTS][GET_RECORDS] = { "EVENTS_GET_RECORDS",
         cmd_events_get_records, 1, 0 },
     [EVENTS][CLEAR_RECORDS] = { "EVENTS_CLEAR_RECORDS",
-        cmd_events_clear_records, ~0, IMMEDIATE_LOG_CHANGE },
+        cmd_events_clear_records, 8, IMMEDIATE_LOG_CHANGE },
     [EVENTS][GET_INTERRUPT_POLICY] = { "EVENTS_GET_INTERRUPT_POLICY",
         cmd_events_get_interrupt_policy, 0, 0 },
     [EVENTS][SET_INTERRUPT_POLICY] = { "EVENTS_SET_INTERRUPT_POLICY",
