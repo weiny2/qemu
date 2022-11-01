@@ -122,4 +122,75 @@ struct cxl_event_interrupt_policy {
     uint8_t dyn_cap_settings;
 } QEMU_PACKED;
 
+/*
+ * General Media Event Record
+ * CXL rev 3.0 Section 8.2.9.2.1.1; Table 8-43
+ */
+#define CXL_EVENT_GEN_MED_COMP_ID_SIZE  0x10
+#define CXL_EVENT_GEN_MED_RES_SIZE      0x2e
+struct cxl_event_gen_media {
+    struct cxl_event_record_hdr hdr;
+    uint64_t phys_addr;
+    uint8_t descriptor;
+    uint8_t type;
+    uint8_t transaction_type;
+    uint8_t validity_flags[2];
+    uint8_t channel;
+    uint8_t rank;
+    uint8_t device[3];
+    uint8_t component_id[CXL_EVENT_GEN_MED_COMP_ID_SIZE];
+    uint8_t reserved[CXL_EVENT_GEN_MED_RES_SIZE];
+} QEMU_PACKED;
+
+/*
+ * DRAM Event Record - DER
+ * CXL rev 3.0 section 8.2.9.2.1.2; Table 3-44
+ */
+#define CXL_EVENT_DER_CORRECTION_MASK_SIZE   0x20
+#define CXL_EVENT_DER_RES_SIZE               0x17
+struct cxl_event_dram {
+    struct cxl_event_record_hdr hdr;
+    uint64_t phys_addr;
+    uint8_t descriptor;
+    uint8_t type;
+    uint8_t transaction_type;
+    uint8_t validity_flags[2];
+    uint8_t channel;
+    uint8_t rank;
+    uint8_t nibble_mask[3];
+    uint8_t bank_group;
+    uint8_t bank;
+    uint8_t row[3];
+    uint8_t column[2];
+    uint8_t correction_mask[CXL_EVENT_DER_CORRECTION_MASK_SIZE];
+    uint8_t reserved[CXL_EVENT_DER_RES_SIZE];
+} QEMU_PACKED;
+
+/*
+ * Get Health Info Record
+ * CXL rev 3.0 section 8.2.9.8.3.1; Table 8-100
+ */
+struct cxl_get_health_info {
+    uint8_t health_status;
+    uint8_t media_status;
+    uint8_t add_status;
+    uint8_t life_used;
+    uint8_t device_temp[2];
+    uint8_t dirty_shutdown_cnt[4];
+    uint8_t cor_vol_err_cnt[4];
+    uint8_t cor_per_err_cnt[4];
+} QEMU_PACKED;
+
+/*
+ * Memory Module Event Record
+ * CXL rev 3.0 section 8.2.9.2.1.3; Table 8-45
+ */
+#define CXL_EVENT_MEM_MOD_RES_SIZE  0x3d
+struct cxl_event_mem_module {
+    struct cxl_event_record_hdr hdr;
+    uint8_t event_type;
+    struct cxl_get_health_info info;
+    uint8_t reserved[CXL_EVENT_MEM_MOD_RES_SIZE];
+} QEMU_PACKED;
+
 #endif /* CXL_EVENTS_H */
