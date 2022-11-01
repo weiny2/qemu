@@ -11,6 +11,7 @@
 #define CXL_DEVICE_H
 
 #include "hw/register.h"
+#include "hw/cxl/cxl_events.h"
 
 #include "hw/cxl/cxl_cpmu.h"
 /*
@@ -142,6 +143,20 @@ struct cxl_cmd {
     uint8_t *payload;
 };
 
+typedef struct CXLEvent {
+    struct cxl_event_record_raw data;
+    QSIMPLEQ_ENTRY(CXLEvent) node;
+} CXLEvent;
+
+struct cxl_event_log {
+    uint16_t next_handle;
+    uint16_t overflow_err_count;
+    uint64_t first_overflow_timestamp;
+    uint64_t last_overflow_timestamp;
+    QemuMutex lock;
+    QSIMPLEQ_HEAD(, CXLEvent) events;
+};
+
 typedef struct cxl_device_state {
     MemoryRegion device_registers;
 
@@ -197,6 +212,8 @@ typedef struct cxl_device_state {
     struct cxl_cmd (*cxl_cmd_set)[256];
     /* Move me later */
     CPMUState cpmu[CXL_NUM_CPMU_INSTANCES];
+
+    struct cxl_event_log event_logs[CXL_EVENT_TYPE_MAX];
 } CXLDeviceState;
 
 /* Initialize the register block for a device */
@@ -380,5 +397,16 @@ struct CSWMBCCIDev {
     CXLComponentState cxl_cstate;
     CXLDeviceState cxl_dstate;
 };
+
+void cxl_event_init(CXLDeviceState *cxlds);
+bool cxl_event_insert(CXLDeviceState *cxlds,
+                      enum cxl_event_log_type log_type,
+                      struct cxl_event_record_raw *event);
+ret_code cxl_event_get_records(CXLDeviceState *cxlds,
+                               struct cxl_get_event_payload *pl,
+                               uint8_t log_type, int max_recs,
+                               uint16_t *len);
+ret_code cxl_event_clear_records(CXLDeviceState *cxlds,
+                                 struct cxl_clear_event_payload *pl);
 
 #endif
