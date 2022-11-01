@@ -9,6 +9,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/cxl/cxl.h"
+#include "hw/cxl/cxl_events.h"
 #include "hw/pci/pci.h"
 #include "hw/pci-bridge/cxl_upstream_port.h"
 #include "qemu/cutils.h"
@@ -87,8 +88,6 @@ enum {
         return CXL_MBOX_SUCCESS;                                          \
     }
 
-DEFINE_MAILBOX_HANDLER_ZEROED(events_get_records, 0x20);
-DEFINE_MAILBOX_HANDLER_NOP(events_clear_records);
 DEFINE_MAILBOX_HANDLER_ZEROED(events_get_interrupt_policy, 4);
 DEFINE_MAILBOX_HANDLER_NOP(events_set_interrupt_policy);
 
@@ -247,6 +246,114 @@ static ret_code cmd_infostat_bg_op_sts(struct cxl_cmd *cmd,
     memset(bg_op_status, 0, sizeof(*bg_op_status));
     /* No support yet for background operations so status all 0 */
     *len = sizeof(*bg_op_status);
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_get_records(struct cxl_cmd *cmd,
+                                       CXLDeviceState *cxlds,
+                                       uint16_t *len)
+{
+    struct cxl_get_event_payload *pl;
+    struct cxl_event_log *log;
+    uint16_t nr_overflow;
+    uint8_t log_type;
+    CXLEvent *entry;
+    uint16_t nr;
+
+    if (cmd->in < sizeof(log_type)) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    log_type = *((uint8_t *)cmd->payload);
+    if (log_type >= CXL_EVENT_TYPE_MAX) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    pl = (struct cxl_get_event_payload *)cmd->payload;
+    memset(pl, 0, sizeof(*pl));
+
+    log = cxl_event_log(cxlds, log_type);
+    if (!log) {
+        return CXL_MBOX_SUCCESS;
+    }
+
+    entry = cxl_event_get_head(log);
+    for (nr = 0; entry && nr < CXL_GET_EVENT_MAX_RECORDS; nr++) {
+        memcpy(&pl->record[nr], &entry->data, CXL_EVENT_RECORD_SIZE);
+	entry = cxl_event_get_next(entry);
+    }
+
+    if (!cxl_event_empty(log)) {
+        pl->flags |= CXL_GET_EVENT_FLAG_MORE_RECORDS;
+    }
+
+    nr_overflow = cxl_event_overflow(log);
+    if (nr_overflow) {
+        pl->flags |= CXL_GET_EVENT_FLAG_OVERFLOW;
+        pl->overflow_err_count = cpu_to_le16(log->overflow_err_count);
+        pl->first_overflow_timestamp = cpu_to_le64(log->first_overflow_timestamp);
+        pl->last_overflow_timestamp = cpu_to_le64(log->last_overflow_timestamp);
+    }
+
+    pl->record_count = const_le16(nr);
+    *len = sizeof(*pl) + (CXL_EVENT_RECORD_SIZE * nr);
+    return CXL_MBOX_SUCCESS;
+}
+
+static ret_code cmd_events_clear_records(struct cxl_cmd *cmd,
+                                         CXLDeviceState *cxlds,
+                                         uint16_t *len)
+{
+    struct cxl_mbox_clear_event_payload *pl;
+    struct cxl_event_log *log;
+    uint8_t log_type;
+    CXLEvent *entry;
+    int nr;
+
+    pl = (struct cxl_mbox_clear_event_payload *)cmd->payload;
+    log_type = pl->event_log;
+
+    if (log_type >= CXL_EVENT_TYPE_MAX) {
+        return CXL_MBOX_INVALID_INPUT;
+    }
+
+    log = cxl_event_log(cxlds, log_type);
+    if (!log) {
+        return CXL_MBOX_SUCCESS;
+    }
+
+    /*
+     * Must itterate the queue twice.
+     * "The device shall verify the event record handles specified in the input
+     * payload are in temporal order. If the device detects an older event
+     * record that will not be cleared when Clear Event Records is executed,
+     * the device shall return the Invalid Handle return code and shall not
+     * clear any of the specified event records."
+     *   -- CXL 3.0 8.2.9.2.3
+     */
+    entry = cxl_event_get_head(log);
+    for (nr = 0; entry && nr < pl->nr_recs; nr++) {
+        uint16_t handle = le16_to_cpu(pl->handle[nr]);
+
+        /*
+         * The current code clears events as they are read.  Test that behavior
+         * only; don't support clearning from the middle of the log
+         * NOTE: Both are in little endian.
+         */
+        if (handle == 0 || entry->data.hdr.handle != handle) {
+            return CXL_MBOX_INVALID_INPUT;
+        }
+	entry = cxl_event_get_next(entry);
+    }
+
+    /* Then if valid delete them */
+    entry = cxl_event_get_head(log);
+    for (nr = 0; entry && nr < pl->nr_recs; nr++) {
+        cxl_event_delete_head(cxlds, log_type, log);
+	entry = cxl_event_get_head(log);
+    }
+
+    *len = 0;
     return CXL_MBOX_SUCCESS;
 }
 
