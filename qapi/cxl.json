@@ -6,6 +6,21 @@
 ##
 
 ##
+# @cxl-inject-gen-media-event:
+#
+# @path: CXL type 3 device canonical QOM path
+#
+# @log: Event Log to add the event to
+# @flags: header flags
+# @physaddr: Physical Address
+#
+# FIXME add fields
+##
+{ 'command': 'cxl-inject-gen-media-event',
+  'data': { 'path': 'str', 'log': 'uint8', 'flags': 'uint8',
+            'physaddr': 'uint64' }}
+
+##
 # @cxl-inject-poison:
 #
 # @path: CXL type 3 device canonical QOM path
