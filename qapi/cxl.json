@@ -6,6 +6,31 @@
 ##
 
 ##
+# @cxl-inject-gen-media-event:
+#
+# @path: CXL type 3 device canonical QOM path
+#
+# @log: Event Log to add the event to
+# @flags: header flags
+# @physaddr: Physical Address
+# @descriptor: Descriptor
+# @type: Type
+# @transactiontype: Transaction Type
+# @channel: Channel
+# @rank: Rank
+# @device: Device
+# @componentid: Device specific string
+#
+##
+{ 'command': 'cxl-inject-gen-media-event',
+  'data': { 'path': 'str', 'log': 'uint8', 'flags': 'uint8',
+            'physaddr': 'uint64', 'descriptor': 'uint8',
+            'type': 'uint8', 'transactiontype': 'uint8',
+            'channel': 'int16', 'rank': 'int16',
+            'device': 'int32', 'componentid': 'str'
+            }}
+
+##
 # @cxl-inject-poison:
 #
 # @path: CXL type 3 device canonical QOM path
