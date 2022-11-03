@@ -787,6 +787,64 @@ static CXLPoisonList *get_poison_list(CXLType3Dev *ct3d)
     return &ct3d->poison_list;
 }
 
+static void cxl_assign_event_header(struct cxl_event_record_hdr *hdr,
+                                    QemuUUID *uuid, uint8_t flags,
+				    uint8_t length)
+{
+    hdr->flags[0] = flags;
+    hdr->length = length;
+    memcpy(&hdr->id, uuid, sizeof(hdr->id));
+    hdr->timestamp = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+}
+
+QemuUUID gen_media_uuid = {
+    .data = UUID(0xfbcd0a77, 0xc260, 0x417f,
+                 0x85, 0xa9, 0x08, 0x8b, 0x16, 0x21, 0xeb, 0xa6),
+};
+
+void qmp_cxl_inject_gen_media_event(const char *path, uint8_t log,
+                                    uint8_t flags, uint64_t physaddr,
+				    Error **errp)
+{
+    Object *obj = object_resolve_path(path, NULL);
+    struct cxl_event_gen_media gem;
+    struct cxl_event_record_hdr *hdr = &gem.hdr;
+    CXLDeviceState *cxlds;
+    CXLType3Dev *ct3d;
+
+    if (log >= CXL_EVENT_TYPE_MAX) {
+        error_setg(errp, "Invalid log type: %d", log);
+        return;
+    }
+    if (!obj) {
+        error_setg(errp, "Unable to resolve path");
+        return;
+    }
+    if (!object_dynamic_cast(obj, TYPE_CXL_TYPE3)) {
+        error_setg(errp, "Path does not point to a CXL type 3 device");
+    }
+    ct3d = CXL_TYPE3(obj);
+    cxlds = &ct3d->cxl_dstate;
+
+    memset(&gem, 0, sizeof(gem));
+    cxl_assign_event_header(hdr, &gen_media_uuid, flags,
+                            sizeof(struct cxl_event_gen_media));
+    gem.phys_addr = physaddr;
+
+#if 0
+    /* FIXME Need more parameters above. */
+    gem->descriptor = CXL_GMER_EVT_DESC_UNCORECTABLE_EVENT;
+    gem->type = CXL_GMER_MEM_EVT_TYPE_DATA_PATH_ERROR;
+    gem->transaction_type = CXL_GMER_TRANS_HOST_WRITE;
+    gem->validity_flags = { CXL_GMER_VALID_CHANNEL |
+                            CXL_GMER_VALID_RANK, 0 };
+    gem->channel = 1;
+    gem->rank = 30;
+#endif
+
+    cxl_event_insert(cxlds, log, (struct cxl_event_record_raw *)&gem);
+}
+
 void qmp_cxl_inject_poison(const char *path, uint64_t start, uint64_t length,
                            Error **errp)
 {
