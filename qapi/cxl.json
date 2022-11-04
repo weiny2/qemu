@@ -6,6 +6,16 @@
 ##
 
 ##
+# @cxl-trigger-event-irq:
+#
+# @path: CXL type 3 device canonical QOM path
+#
+# Triggers irqs for all event logs which have data in them.
+##
+{ 'command': 'cxl-trigger-event-irq',
+  'data': { 'path': 'str' } }
+
+##
 # @cxl-inject-gen-media-event:
 #
 # @path: CXL type 3 device canonical QOM path

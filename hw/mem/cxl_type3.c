@@ -788,6 +788,23 @@ static CXLPoisonList *get_poison_list(CXLType3Dev *ct3d)
 }
 
 
+void qmp_cxl_trigger_event_irq(const char *path, Error **errp)
+{
+    Object *obj = object_resolve_path(path, NULL);
+    CXLType3Dev *ct3d;
+
+    if (!obj) {
+        error_setg(errp, "Unable to resolve path");
+        return;
+    }
+    if (!object_dynamic_cast(obj, TYPE_CXL_TYPE3)) {
+        error_setg(errp, "Path does not point to a CXL type 3 device");
+    }
+    ct3d = CXL_TYPE3(obj);
+
+    cxl_event_irq_assert(ct3d);
+}
+
 QemuUUID gen_media_uuid = {
     .data = UUID(0xfbcd0a77, 0xc260, 0x417f,
                  0x85, 0xa9, 0x08, 0x8b, 0x16, 0x21, 0xeb, 0xa6),
