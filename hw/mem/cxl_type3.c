@@ -374,7 +374,9 @@ static void ct3d_config_write(PCIDevice *pci_dev, uint32_t addr, uint32_t val,
 static void build_dvsecs(CXLType3Dev *ct3d)
 {
     CXLComponentState *cxl_cstate = &ct3d->cxl_cstate;
+    CXLDVSECRegisterLocator *regloc_dvsec;
     uint8_t *dvsec;
+    int i;
 
     dvsec = (uint8_t *)&(CXLDVSECDevice){
         .cap = 0x1e,
@@ -391,16 +393,21 @@ static void build_dvsecs(CXLType3Dev *ct3d)
                                PCIE_CXL_DEVICE_DVSEC,
                                PCIE_CXL2_DEVICE_DVSEC_REVID, dvsec);
 
-    dvsec = (uint8_t *)&(CXLDVSECRegisterLocator){
+    regloc_dvsec = &(CXLDVSECRegisterLocator){
         .rsvd         = 0,
         .reg_base[0].lo = RBI_COMPONENT_REG | CXL_COMPONENT_REG_BAR_IDX,
         .reg_base[0].hi = 0,
         .reg_base[1].lo = RBI_CXL_DEVICE_REG | CXL_DEVICE_REG_BAR_IDX,
         .reg_base[1].hi = 0,
     };
+    for (i = 0; i < CXL_NUM_CPMU_INSTANCES; i++) {
+        regloc_dvsec->reg_base[2 + i].lo = CXL_CPMU_OFFSET(i) |
+            RBI_CXL_CPMU_REG | CXL_DEVICE_REG_BAR_IDX;
+        regloc_dvsec->reg_base[2 + i].hi = 0;
+    }
     cxl_component_create_dvsec(cxl_cstate, CXL2_TYPE3_DEVICE,
                                REG_LOC_DVSEC_LENGTH, REG_LOC_DVSEC,
-                               REG_LOC_DVSEC_REVID, dvsec);
+                               REG_LOC_DVSEC_REVID, (uint8_t *)regloc_dvsec);
     dvsec = (uint8_t *)&(CXLDVSECDeviceGPF){
         .phase2_duration = 0x603, /* 3 seconds */
         .phase2_power = 0x33, /* 0x33 miliwatts */
@@ -522,7 +529,7 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     ComponentRegisters *regs = &cxl_cstate->crb;
     MemoryRegion *mr = &regs->component_registers;
     uint8_t *pci_conf = pci_dev->config;
-    unsigned short msix_num = 3;
+    unsigned short msix_num = 4;
     int i;
 
     if (!cxl_setup_memory(ct3d, errp)) {
@@ -557,6 +564,8 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
         PCI_BASE_ADDRESS_SPACE_MEMORY | PCI_BASE_ADDRESS_MEM_TYPE_64, mr);
 
     cxl_device_register_block_init(OBJECT(pci_dev), &ct3d->cxl_dstate);
+    cxl_cpmu_register_block_init(OBJECT(pci_dev), &ct3d->cxl_dstate, 0, 3);
+    cxl_cpmu_register_block_init(OBJECT(pci_dev), &ct3d->cxl_dstate, 1, 3);
     pci_register_bar(pci_dev, CXL_DEVICE_REG_BAR_IDX,
                      PCI_BASE_ADDRESS_SPACE_MEMORY |
                          PCI_BASE_ADDRESS_MEM_TYPE_64,
