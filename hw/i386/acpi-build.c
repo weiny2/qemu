@@ -701,7 +701,7 @@ static Aml *build_prt(bool is_pci0_prt)
                       lnk_idx));
 
         /* route[2] = "LNK[D|A|B|C]", selection based on pin % 3  */
-        aml_append(while_ctx, initialize_route(route, "LNKD", lnk_idx, 0));
+        aml_append(while_ctx, initialize_route(route, "GSIH", lnk_idx, 0));
         if (is_pci0_prt) {
             Aml *if_device_1, *if_pin_4, *else_pin_4;
 
@@ -717,16 +717,16 @@ static Aml *build_prt(bool is_pci0_prt)
                 else_pin_4 = aml_else();
                 {
                     aml_append(else_pin_4,
-                        aml_store(build_prt_entry("LNKA"), route));
+                        aml_store(build_prt_entry("GSIE"), route));
                 }
                 aml_append(if_device_1, else_pin_4);
             }
             aml_append(while_ctx, if_device_1);
         } else {
-            aml_append(while_ctx, initialize_route(route, "LNKA", lnk_idx, 1));
+            aml_append(while_ctx, initialize_route(route, "GSIE", lnk_idx, 1));
         }
-        aml_append(while_ctx, initialize_route(route, "LNKB", lnk_idx, 2));
-        aml_append(while_ctx, initialize_route(route, "LNKC", lnk_idx, 3));
+        aml_append(while_ctx, initialize_route(route, "GSIF", lnk_idx, 2));
+        aml_append(while_ctx, initialize_route(route, "GSIG", lnk_idx, 3));
 
         /* route[0] = 0x[slot]FFFF */
         aml_append(while_ctx,
@@ -1483,7 +1483,7 @@ build_dsdt(GArray *table_data, BIOSLinker *linker,
                 aml_append(pkg, aml_eisaid("PNP0A03"));
                 aml_append(dev, aml_name_decl("_CID", pkg));
                 aml_append(dev, aml_name_decl("_ADR", aml_int(0)));
-                aml_append(dev, aml_name_decl("_UID", aml_int(bus_num)));
+//                aml_append(dev, aml_name_decl("_UID", aml_int(bus_num)));
                 build_cxl_osc_method(dev);
             } else if (pci_bus_is_express(bus)) {
                 aml_append(dev, aml_name_decl("_HID", aml_eisaid("PNP0A08")));
