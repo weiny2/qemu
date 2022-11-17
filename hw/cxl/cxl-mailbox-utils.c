@@ -41,6 +41,11 @@
  */
 
 enum {
+    INFOSTAT    = 0x00,
+        #define IS_IDENTIFY   0x1
+        #define BACKGROUND_OPERATION_STATUS    0x2
+        #define GET_RESPONSE_MESSAGE_LIMIT     0x3
+        #define SET_RESPONSE_MESSAGE_LIMIT     0x4
     EVENTS      = 0x01,
         #define GET_RECORDS   0x0
         #define CLEAR_RECORDS   0x1
@@ -84,6 +89,87 @@ DEFINE_MAILBOX_HANDLER_ZEROED(events_get_records, 0x20);
 DEFINE_MAILBOX_HANDLER_NOP(events_clear_records);
 DEFINE_MAILBOX_HANDLER_ZEROED(events_get_interrupt_policy, 4);
 DEFINE_MAILBOX_HANDLER_NOP(events_set_interrupt_policy);
+
+static void find_cxl_usp(PCIBus *b, PCIDevice *d, void *opaque)
+{
+    PCIDevice **found_dev = opaque;
+
+    if (object_dynamic_cast(OBJECT(d), TYPE_CXL_USP)) {
+        *found_dev = d;
+    }
+}
+
+/* CXL r3 8.2.9.1.1 */
+static ret_code cmd_infostat_identify(struct cxl_cmd *cmd,
+                                      CXLDeviceState *cxl_dstate,
+                                      uint16_t *len)
+{
+    /*
+     * Assumptions in here that this port is on same bus as
+     * a switch upstream port.  Otherwise we need to more clever
+     * about CCI to switch connectivity.
+     */
+
+    /* Find a Peer Upstream Port */
+    PCIDevice *cci_pci_dev = PCI_DEVICE(container_of(cxl_dstate,
+                                                     struct CSWMBCCIDev,
+                                                     cxl_dstate));
+    PCIBus *pci_bus = pci_get_bus(cci_pci_dev);
+    PCIDevice *pci_dev = NULL;
+    struct {
+        uint16_t pcie_vid;
+        uint16_t pcie_did;
+        uint16_t pcie_subsys_vid;
+        uint16_t pcie_subsys_id;
+        uint64_t sn;
+        uint8_t max_message_size;
+        uint8_t component_type;
+    } QEMU_PACKED *is_identify;
+    QEMU_BUILD_BUG_ON(sizeof(*is_identify) != 18);
+
+    pci_for_each_device_under_bus(pci_bus, find_cxl_usp, &pci_dev);
+
+    is_identify = (void *)cmd->payload;
+    memset(is_identify, 0, sizeof(*is_identify));
+    if (pci_dev) {
+        CXLUpstreamPort *port = CXL_USP(pci_dev);
+        /*
+         * Messy question - which IDs?  Those of the CCI Function, or those of
+         * the USP?
+         */
+        is_identify->pcie_vid = pci_get_word(&pci_dev->config[PCI_VENDOR_ID]);
+        is_identify->pcie_did = pci_get_word(&pci_dev->config[PCI_DEVICE_ID]);
+        is_identify->pcie_subsys_vid = 0; /* Not defined for a USP */
+        is_identify->pcie_subsys_id = 0; /* Not defined for a USP */
+
+        is_identify->sn = port->sn;
+        is_identify->max_message_size = CXL_MAILBOX_PAYLOAD_SHIFT;
+        is_identify->component_type = 0; /* Switch */
+    }
+    *len = sizeof(*is_identify);
+    return CXL_MBOX_SUCCESS;
+}
+
+/* CXL r3.0 8.2.9.1.2 */
+static ret_code cmd_infostat_bg_op_sts(struct cxl_cmd *cmd,
+                                       CXLDeviceState *cxl_dstate,
+                                       uint16_t *len)
+{
+    struct {
+        uint8_t status;
+        uint8_t rsvd;
+        uint16_t opcode;
+        uint16_t returncode;
+        uint16_t vendor_ext_status;
+    } QEMU_PACKED *bg_op_status;
+    QEMU_BUILD_BUG_ON(sizeof(*bg_op_status) != 8);
+
+    bg_op_status = (void *)cmd->payload;
+    memset(bg_op_status, 0, sizeof(*bg_op_status));
+    /* No support yet for background operations so status all 0 */
+    *len = sizeof(*bg_op_status);
+    return CXL_MBOX_SUCCESS;
+}
 
 /* 8.2.9.2.1 */
 static ret_code cmd_firmware_update_get_info(struct cxl_cmd *cmd,
@@ -458,6 +544,16 @@ static struct cxl_cmd cxl_cmd_set[256][256] = {
         cmd_media_get_poison_list, 16, 0 },
 };
 
+static struct cxl_cmd cxl_cmd_set_sw[256][256] = {
+    [INFOSTAT][IS_IDENTIFY] = { "IDENTIFY", cmd_infostat_identify, 0, 18 },
+    [INFOSTAT][BACKGROUND_OPERATION_STATUS] = { "BACKGROUND_OPERATION_STATUS",
+        cmd_infostat_bg_op_sts, 0, 8 },
+    [TIMESTAMP][GET] = { "TIMESTAMP_GET", cmd_timestamp_get, 0, 0 },
+    [TIMESTAMP][SET] = { "TIMESTAMP_SET", cmd_timestamp_set, 8, IMMEDIATE_POLICY_CHANGE },
+    [LOGS][GET_SUPPORTED] = { "LOGS_GET_SUPPORTED", cmd_logs_get_supported, 0, 0 },
+    [LOGS][GET_LOG] = { "LOGS_GET_LOG", cmd_logs_get_log, 0x18, 0 },
+};
+
 void cxl_process_mailbox(CXLDeviceState *cxl_dstate)
 {
     uint16_t ret = CXL_MBOX_SUCCESS;
@@ -502,12 +598,16 @@ void cxl_process_mailbox(CXLDeviceState *cxl_dstate)
                      DOORBELL, 0);
 }
 
-int cxl_initialize_mailbox(CXLDeviceState *cxl_dstate)
+int cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
 {
     /* CXL 2.0: Table 169 Get Supported Logs Log Entry */
     const char *cel_uuidstr = "0da9c0b5-bf41-4b78-8f79-96b1623b3f17";
 
-    cxl_dstate->cxl_cmd_set = cxl_cmd_set;
+    if (!switch_cci) {
+        cxl_dstate->cxl_cmd_set = cxl_cmd_set;
+    } else {
+        cxl_dstate->cxl_cmd_set = cxl_cmd_set_sw;
+    }
     for (int set = 0; set < 256; set++) {
         for (int cmd = 0; cmd < 256; cmd++) {
             if (cxl_dstate->cxl_cmd_set[set][cmd].handler) {
