@@ -1,0 +1,17 @@
+# -*- Mode: Python -*-
+# vim: filetype=python
+
+##
+# = CXL devices
+##
+
+##
+# @cxl-inject-poison:
+#
+# @path: CXL type 3 device canonical QOM path
+#
+# @start: Start address
+# @length: Length of poison to inject
+##
+{ 'command': 'cxl-inject-poison',
+  'data': { 'path': 'str', 'start': 'uint64', 'length': 'uint64' }}
