@@ -411,6 +411,9 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     build_dvsecs(ct3d);
 
     regs->special_ops = g_new0(MemoryRegionOps, 1);
+    if (!regs->special_ops) {
+        goto err_address_space_free;
+    }
     regs->special_ops->write = ct3d_reg_write;
 
     cxl_component_register_block_init(OBJECT(pci_dev), cxl_cstate,
@@ -439,6 +442,11 @@ static void ct3_realize(PCIDevice *pci_dev, Error **errp)
     cxl_cstate->cdat.free_cdat_table = ct3_free_cdat_table;
     cxl_cstate->cdat.private = ct3d;
     cxl_doe_cdat_init(cxl_cstate, errp);
+    return;
+
+err_address_space_free:
+    address_space_destroy(&ct3d->hostmem_as);
+    return;
 }
 
 static void ct3_exit(PCIDevice *pci_dev)
