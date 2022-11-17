@@ -806,6 +806,161 @@ void qmp_cxl_inject_poison(const char *path, uint64_t start, uint64_t length,
     QLIST_INSERT_HEAD(&ct3d->poison_list, p, node);
 }
 
+void qmp_cxl_inject_uncorrectable_error(const char *path,
+                                        CxlUncorErrorType type,
+                                        uint32List *header, Error **errp)
+{
+    static PCIEAERErr err = {};
+    Object *obj = object_resolve_path(path, NULL);
+    CXLType3Dev *ct3d;
+    uint32_t *reg_state;
+    uint8_t header_count = 0;
+    uint32_t unc_err;
+
+    if (!obj) {
+        error_setg(errp, "Unable to resolve path");
+        return;
+    }
+    if (!object_dynamic_cast(obj, TYPE_CXL_TYPE3)) {
+        error_setg(errp, "Path does not point to a CXL type 3 device");
+    }
+
+    err.status = PCI_ERR_UNC_INTN;
+    err.source_id = pci_requester_id(PCI_DEVICE(obj));
+    err.flags = 0;
+
+    ct3d = CXL_TYPE3(obj);
+    reg_state = ct3d->cxl_cstate.crb.cache_mem_registers;
+    unc_err = reg_state[R_CXL_RAS_UNC_ERR_STATUS];
+    switch (type) {
+    case CXL_UNCOR_ERROR_TYPE_CACHE_DATA_PARITY:
+        unc_err |= (1 << 0);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_CACHE_ADDRESS_PARITY:
+        unc_err |= (1 << 1);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_CACHE_BE_PARITY:
+        unc_err |= (1 << 2);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_CACHE_DATA_ECC:
+        unc_err |= (1 << 3);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_MEM_DATA_PARITY:
+        unc_err |= (1 << 4);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_MEM_ADDRESS_PARITY:
+        unc_err |= (1 << 5);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_MEM_BE_PARITY:
+        unc_err |= (1 << 6);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_MEM_DATA_ECC:
+        unc_err |= (1 << 7);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_REINIT_THRESHOLD:
+        unc_err |= (1 << 8);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_RSVD_ENCODING:
+        unc_err |= (1 << 9);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_POISON_RECEIVED:
+        unc_err |= (1 << 10);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_RECEIVER_OVERFLOW:
+        unc_err |= (1 << 11);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_INTERNAL:
+        unc_err |= (1 << 14);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_CXL_IDE_TX:
+        unc_err |= (1 << 15);
+        break;
+    case CXL_UNCOR_ERROR_TYPE_CXL_IDE_RX:
+        unc_err |= (1 << 16);
+        break;
+    default:
+        error_setg(errp, "Unhandled error injection type");
+        return;
+    }
+    reg_state[R_CXL_RAS_UNC_ERR_STATUS] = unc_err;
+    while (header && header_count < 32) {
+        reg_state[R_CXL_RAS_ERR_HEADER0 + header_count++] = header->value;
+
+        header = header->next;
+    }
+    if (header_count > 32) {
+        error_setg(errp, "Header must be 32 DWORD or less");
+        return;
+    }
+
+    pcie_aer_inject_error(PCI_DEVICE(obj), &err);
+}
+
+void qmp_cxl_inject_correctable_error(const char *path, CxlCorErrorType type,
+                                      uint32List *header, Error **errp)
+{
+    static PCIEAERErr err = {};
+    Object *obj = object_resolve_path(path, NULL);
+    CXLType3Dev *ct3d;
+    uint32_t *reg_state;
+    uint8_t header_count = 0;
+    uint32_t cor_err;
+
+    if (!obj) {
+        error_setg(errp, "Unable to resolve path");
+        return;
+    }
+    if (!object_dynamic_cast(obj, TYPE_CXL_TYPE3)) {
+        error_setg(errp, "Path does not point to a CXL type 3 device");
+    }
+
+    err.status = PCI_ERR_COR_INTERNAL;
+    err.source_id = pci_requester_id(PCI_DEVICE(obj));
+    err.flags = PCIE_AER_ERR_IS_CORRECTABLE;
+
+    ct3d = CXL_TYPE3(obj);
+    reg_state = ct3d->cxl_cstate.crb.cache_mem_registers;
+    cor_err = reg_state[R_CXL_RAS_COR_ERR_STATUS];
+    switch (type) {
+    case CXL_COR_ERROR_TYPE_CACHE_DATA_ECC:
+        cor_err |= (1 << 0);
+        break;
+    case CXL_COR_ERROR_TYPE_MEM_DATA_ECC:
+        cor_err |= (1 << 1);
+        break;
+    case CXL_COR_ERROR_TYPE_CRC_THRESHOLD:
+        cor_err |= (1 << 2);
+        break;
+    case CXL_COR_ERROR_TYPE_RETRY_THRESHOLD:
+        cor_err |= (1 << 3);
+        break;
+    case CXL_COR_ERROR_TYPE_CACHE_POISON_RECEIVED:
+        cor_err |= (1 << 4);
+        break;
+    case CXL_COR_ERROR_TYPE_MEM_POISON_RECEIVED:
+        cor_err |= (1 << 5);
+        break;
+    case CXL_COR_ERROR_TYPE_PHYSICAL:
+        cor_err |= (1 << 6);
+        break;
+    default:
+        error_setg(errp, "Unhandled error injection type");
+        return;
+    }
+    reg_state[R_CXL_RAS_COR_ERR_STATUS] = cor_err;
+    while (header && header_count < 32) {
+        reg_state[R_CXL_RAS_ERR_HEADER0 + header_count++] = header->value;
+
+        header = header->next;
+    }
+    if (header_count > 32) {
+        error_setg(errp, "Header must be 32 DWORD or less");
+        return;
+    }
+
+    pcie_aer_inject_error(PCI_DEVICE(obj), &err);
+}
+
 static void ct3_class_init(ObjectClass *oc, void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);

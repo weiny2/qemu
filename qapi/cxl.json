@@ -15,3 +15,100 @@
 ##
 { 'command': 'cxl-inject-poison',
   'data': { 'path': 'str', 'start': 'uint64', 'length': 'uint64' }}
+
+##
+# @CxlUncorErrorType:
+#
+# Type of CXL error to inject
+#
+# @cache-data-parity: Data error such as data parity or data ECC error CXL.cache
+# @cache-address-parity: Address parity or other errors associated with the
+#                        address field on CXL.cache
+# @cache-be-parity: Byte enable parity or other byte enable errors on CXL.cache
+# @cache-data-ecc: ECC error on CXL.cache
+# @mem-data-parity: Data error such as data parity or data ECC error on CXL.mem
+# @mem-address-parity: Address parity or other errors associated with the
+#                      address field on CXL.mem
+# @mem-be-parity: Byte enable parity or other byte enable errors on CXL.mem.
+# @mem-data-ecc: Data ECC error on CXL.mem.
+# @reinit-threshold: REINIT threshold hit.
+# @rsvd-encoding: Received unrecognized encoding.
+# @poison-received: Received poison from the peer.
+# @receiver-overflow: Buffer overflows (first 3 bits of header log indicate which)
+# @internal: Component specific error
+# @cxl-ide-tx: Integrity and data encryption tx error.
+# @cxl-ide-rx: Integrity and data encryption rx error.
+##
+
+{ 'enum': 'CxlUncorErrorType',
+  'data': ['cache-data-parity',
+           'cache-address-parity',
+           'cache-be-parity',
+           'cache-data-ecc',
+           'mem-data-parity',
+           'mem-address-parity',
+           'mem-be-parity',
+           'mem-data-ecc',
+           'reinit-threshold',
+           'rsvd-encoding',
+           'poison-received',
+           'receiver-overflow',
+           'internal',
+           'cxl-ide-tx',
+           'cxl-ide-rx'
+           ]
+ }
+
+##
+# @cxl-inject-uncorrectable-error:
+#
+# @path: CXL type 3 device canonical QOM path
+#
+# @type: Type of error.
+#
+# @header: 16 DWORD of header.
+##
+{ 'command': 'cxl-inject-uncorrectable-error',
+  'data': { 'path': 'str',
+             'type': 'CxlUncorErrorType',
+             'header': [ 'uint32' ]
+  }
+}
+
+##
+# @CxlCorErrorType:
+#
+# Type of CXL correctable error to inject
+#
+# @cache-data-ecc: Data ECC error on CXL.cache
+# @mem-data-ecc: Data ECC error on CXL.mem
+# @crc-threshold: Component specific and applicable to 68 byte Flit mode only.
+# @cache-poison-received: Received poison from a peer on CXL.cache.
+# @mem-poison-received: Received poison from a peer on CXL.mem
+# @physical: Received error indication from the physical layer.
+##
+{ 'enum': 'CxlCorErrorType',
+  'data': ['cache-data-ecc',
+           'mem-data-ecc',
+           'crc-threshold',
+           'retry-threshold',
+           'cache-poison-received',
+           'mem-poison-received',
+           'physical']
+}
+
+##
+# @cxl-inject-correctable-error:
+#
+# @path: CXL Type 3 device canonical QOM path
+#
+# @type: Type of error.
+#
+# @header : 16 DWORD of header.
+##
+{ 'command': 'cxl-inject-correctable-error',
+  'data': { 'path': 'str',
+            'type': 'CxlCorErrorType',
+            'header': [ 'uint32' ]
+  }
+}
