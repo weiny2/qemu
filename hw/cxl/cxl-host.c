@@ -64,6 +64,11 @@ static void cxl_fixed_memory_window_config(CXLState *cxl_state,
         fw->enc_int_gran = 0;
     }
 
+    if (object->has_restrictions) {
+        fw->restrictions = object->restrictions;
+    } else {
+        fw->restrictions = 0xf; /* No restrictions */
+    }
     cxl_state->fixed_windows = g_list_append(cxl_state->fixed_windows,
                                              g_steal_pointer(&fw));
 
