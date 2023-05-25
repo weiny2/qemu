@@ -73,6 +73,8 @@ enum {
         #define GET_POISON_LIST        0x0
         #define INJECT_POISON          0x1
         #define CLEAR_POISON           0x2
+    PHYSICAL_SWITCH = 0x51
+        #define IDENTIFY_SWITCH_DEVICE      0x0
 };
 
 
@@ -204,6 +206,21 @@ static void find_cxl_usp(PCIBus *b, PCIDevice *d, void *opaque)
     }
 }
 
+static PCIDevice *switch_cci_to_usp(PCIDevice *cci_pci_dev)
+{
+    /*
+     * Assumptions in here that this port is on same bus as
+     * a switch upstream port.  Otherwise we need to more clever
+     * about CCI to switch connectivity.
+     */
+    PCIBus *pci_bus = pci_get_bus(cci_pci_dev);
+    PCIDevice *pci_dev = NULL;
+
+    pci_for_each_device_under_bus(pci_bus, find_cxl_usp, &pci_dev);
+
+    return pci_dev;
+}
+
 /* CXL r3 8.2.9.1.1 */
 static CXLRetCode cmd_infostat_identify(struct cxl_cmd *cmd,
                                         CXLDeviceState *cxl_dstate,
@@ -219,8 +236,7 @@ static CXLRetCode cmd_infostat_identify(struct cxl_cmd *cmd,
     PCIDevice *cci_pci_dev = PCI_DEVICE(container_of(cxl_dstate,
                                                      struct CSWMBCCIDev,
                                                      cxl_dstate));
-    PCIBus *pci_bus = pci_get_bus(cci_pci_dev);
-    PCIDevice *pci_dev = NULL;
+    PCIDevice *pci_dev = switch_cci_to_usp(cci_pci_dev);
     struct {
         uint16_t pcie_vid;
         uint16_t pcie_did;
@@ -231,9 +247,6 @@ static CXLRetCode cmd_infostat_identify(struct cxl_cmd *cmd,
         uint8_t component_type;
     } QEMU_PACKED *is_identify;
     QEMU_BUILD_BUG_ON(sizeof(*is_identify) != 18);
-
-    pci_for_each_device_under_bus(pci_bus, find_cxl_usp, &pci_dev);
-
     is_identify = (void *)cmd->payload;
     memset(is_identify, 0, sizeof(*is_identify));
     if (pci_dev) {
@@ -252,6 +265,72 @@ static CXLRetCode cmd_infostat_identify(struct cxl_cmd *cmd,
         is_identify->component_type = 0; /* Switch */
     }
     *len = sizeof(*is_identify);
+    return CXL_MBOX_SUCCESS;
+}
+
+static void cxl_count_dsp(PCIBus *b, PCIDevice *d, void *private)
+{
+    uint16_t *count = private;
+    if (object_dynamic_cast(OBJECT(d), TYPE_CXL_DSP)) {
+        *count = *count + 1;
+    }
+}
+
+static void cxl_set_dsp_active_bm(PCIBus *b, PCIDevice *d,
+                                  void *private)
+{
+    uint8_t *bm = private;
+    if (object_dynamic_cast(OBJECT(d), TYPE_CXL_DSP)) {
+        uint8_t port = PCIE_PORT(d)->port;
+        bm[port / 8] |= 1 << (port % 8);
+    }
+}
+
+/* CXL r3 8.2.9.1.1 */
+static CXLRetCode cmd_identify_switch_device(struct cxl_cmd *cmd,
+                                             CXLDeviceState *cxl_dstate,
+                                             uint16_t *len)
+{
+    /* Find a Peer Upstream Port */
+    PCIDevice *cci_pci_dev = PCI_DEVICE(container_of(cxl_dstate,
+                                                     struct CSWMBCCIDev,
+                                                     cxl_dstate));
+
+    struct {
+        uint8_t ingress_port_id;
+        uint8_t rsvd;
+        uint8_t num_physical_ports;
+        uint8_t num_vcs;
+        uint8_t active_port_bitmap[0x20];
+        uint8_t active_vcs_bitmap[0x20];
+        uint16_t total_vppbs;
+        uint16_t bound_vppbs;
+        uint8_t num_hdm_decoders_per_usp;
+    } QEMU_PACKED *identify_sw_dev_rsp;
+    QEMU_BUILD_BUG_ON(sizeof(*identify_sw_dev_rsp) != 0x49);
+    PCIDevice *pci_dev = switch_cci_to_usp(cci_pci_dev);
+
+    identify_sw_dev_rsp = (void *)cmd->payload;
+    memset(identify_sw_dev_rsp, 0, sizeof(*identify_sw_dev_rsp));
+    if (pci_dev) {
+        PCIBus *pci_bus = pci_bridge_get_sec_bus(PCI_BRIDGE(pci_dev));
+        uint16_t num_dsp = 0;
+
+        pci_for_each_device_under_bus(pci_bus, cxl_count_dsp, &num_dsp);
+        identify_sw_dev_rsp->ingress_port_id = PCIE_PORT(pci_dev)->port;
+        identify_sw_dev_rsp->num_physical_ports = 1 + num_dsp;
+         /* Will be a while before we get more complex and need more VCS */
+        identify_sw_dev_rsp->num_vcs = 1;
+        pci_for_each_device_under_bus(pci_bus, cxl_set_dsp_active_bm,
+                                      identify_sw_dev_rsp->active_port_bitmap);
+
+        identify_sw_dev_rsp->active_vcs_bitmap[0] = 0x1;
+        identify_sw_dev_rsp->total_vppbs = num_dsp; /* Fixed binding */
+        identify_sw_dev_rsp->bound_vppbs = num_dsp;
+         /* Only one HDM decoder implemented so far */
+        identify_sw_dev_rsp->num_hdm_decoders_per_usp = 1;
+    }
+    *len = sizeof(*identify_sw_dev_rsp);
     return CXL_MBOX_SUCCESS;
 }
 
@@ -780,10 +859,16 @@ static struct cxl_cmd cxl_cmd_set_sw[256][256] = {
     [INFOSTAT][IS_IDENTIFY] = { "IDENTIFY", cmd_infostat_identify, 0, 18 },
     [INFOSTAT][BACKGROUND_OPERATION_STATUS] = { "BACKGROUND_OPERATION_STATUS",
         cmd_infostat_bg_op_sts, 0, 8 },
+    /*
+     * TODO get / set response message limit - requires all messages over
+     * 256 bytes to support chunking.
+     */
     [TIMESTAMP][GET] = { "TIMESTAMP_GET", cmd_timestamp_get, 0, 0 },
     [TIMESTAMP][SET] = { "TIMESTAMP_SET", cmd_timestamp_set, 8, IMMEDIATE_POLICY_CHANGE },
     [LOGS][GET_SUPPORTED] = { "LOGS_GET_SUPPORTED", cmd_logs_get_supported, 0, 0 },
     [LOGS][GET_LOG] = { "LOGS_GET_LOG", cmd_logs_get_log, 0x18, 0 },
+    [PHYSICAL_SWITCH][IDENTIFY_SWITCH_DEVICE] = {"IDENTIFY_SWITCH_DEVICE",
+        cmd_identify_switch_device, 0, 0x49 },
 };
 
 void cxl_process_mailbox(CXLDeviceState *cxl_dstate)
