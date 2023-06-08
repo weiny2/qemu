@@ -369,3 +369,46 @@
 ##
 {'command': 'cxl-inject-correctable-error',
  'data': {'path': 'str', 'type': 'CxlCorErrorType'}}
+
+
+##
+# @cxl-add-dynamic-capacity-event:
+#
+# Command to add dynamic capacity extent event
+#
+# @path: CXL DCD canonical QOM path
+# @region-id: region id
+# @num-extent: number of extents to add, test only
+# @dpa: start dpa for the operation
+# @extent-len: extent size in MB
+#
+##
+{ 'command': 'cxl-add-dynamic-capacity-event',
+  'data': { 'path': 'str',
+           'region-id': 'uint8',
+           'num-extent': 'uint32',
+           'dpa':'uint64',
+           'extent-len': 'uint64'
+  }
+}
+
+##
+# @cxl-release-dynamic-capacity-event:
+#
+# Command to add dynamic capacity extent event
+#
+# @path: CXL DCD canonical QOM path
+# @region-id: region id
+# @num-extent: number of extents to add, test only
+# @dpa: start dpa for the operation
+# @extent-len: extent size in MB
+#
+##
+{ 'command': 'cxl-release-dynamic-capacity-event',
+  'data': { 'path': 'str',
+           'region-id': 'uint8',
+           'num-extent': 'uint32',
+           'dpa':'uint64',
+           'extent-len': 'uint64'
+  }
+}

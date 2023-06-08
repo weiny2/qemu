@@ -712,28 +712,28 @@ static void ct3d_reg_write(void *opaque, hwaddr offset, uint64_t value,
  */
 static int cxl_create_toy_regions(CXLType3Dev *ct3d)
 {
-	int i;
-	uint64_t region_base = ct3d->hostvmem?ct3d->hostvmem->size
-		+ ct3d->hostpmem->size:ct3d->hostpmem->size;
-	uint64_t region_len = 1024*1024*1024;
-	uint64_t decode_len = 4; /* 4*256MB */
-	uint64_t blk_size = 2*1024*1024;
-	struct CXLDCD_Region *region;
+    int i;
+    uint64_t region_base = ct3d->hostvmem?ct3d->hostvmem->size
+        + ct3d->hostpmem->size:ct3d->hostpmem->size;
+    uint64_t region_len = 1024*1024*1024;
+    uint64_t decode_len = 4; /* 4*256MB */
+    uint64_t blk_size = 2*1024*1024;
+    struct CXLDCD_Region *region;
 
-	for (i = 0; i < ct3d->dc.num_regions; i++) {
-		region = &ct3d->dc.regions[i];
-		region->base = region_base;
-		region->decode_len = decode_len;
-		region->len = region_len;
-		region->block_size = blk_size;
-		/* dsmad_handle is set when creating cdat table entries */
-		region->flags = 0;
+    for (i = 0; i < ct3d->dc.num_regions; i++) {
+        region = &ct3d->dc.regions[i];
+        region->base = region_base;
+        region->decode_len = decode_len;
+        region->len = region_len;
+        region->block_size = blk_size;
+        /* dsmad_handle is set when creating cdat table entries */
+        region->flags = 0;
 
-		region_base += region->len;
-	}
-	QTAILQ_INIT(&ct3d->dc.extents);
+        region_base += region->len;
+    }
+    QTAILQ_INIT(&ct3d->dc.extents);
 
-	return 0;
+    return 0;
 }
 
 static bool cxl_setup_memory(CXLType3Dev *ct3d, Error **errp)
@@ -804,8 +804,8 @@ static bool cxl_setup_memory(CXLType3Dev *ct3d, Error **errp)
         g_free(p_name);
     }
 
-	if (cxl_create_toy_regions(ct3d))
-		return false;
+    if (cxl_create_toy_regions(ct3d))
+        return false;
 
     return true;
 }
@@ -1094,7 +1094,7 @@ static Property ct3_props[] = {
     DEFINE_PROP_UINT64("sn", CXLType3Dev, sn, UI64_NULL),
     DEFINE_PROP_STRING("cdat", CXLType3Dev, cxl_cstate.cdat.filename),
     DEFINE_PROP_UINT16("spdm", CXLType3Dev, spdm_port, 0),
-	DEFINE_PROP_UINT8("num-dc-regions", CXLType3Dev, dc.num_regions, 0),
+    DEFINE_PROP_UINT8("num-dc-regions", CXLType3Dev, dc.num_regions, 0),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -1679,6 +1679,134 @@ void qmp_cxl_inject_memory_module_event(const char *path, CxlEventLog log,
     if (cxl_event_insert(cxlds, enc_log, (CXLEventRecordRaw *)&module)) {
         cxl_event_irq_assert(ct3d);
     }
+}
+
+static const QemuUUID dynamic_capacity_uuid = {
+    .data = UUID(0xca95afa7, 0xf183, 0x4018, 0x8c, 0x2f,
+            0x95, 0x26, 0x8e, 0x10, 0x1a, 0x2a),
+};
+
+static void qmp_cxl_process_dynamic_capacity_event(const char *path, CxlEventLog log,
+        uint8_t flags, uint8_t type, uint16_t hid, uint8_t rid, uint32_t extent_cnt,
+        CXLDCExtent_raw *extents, Error **errp)
+{
+    Object *obj = object_resolve_path(path, NULL);
+    CXLEventDynamicCapacity dCap;
+    CXLEventRecordHdr *hdr = &dCap.hdr;
+    CXLDeviceState *cxlds;
+    CXLType3Dev *dcd;
+    int i;
+
+    if (!obj) {
+        error_setg(errp, "Unable to resolve path");
+        return;
+    }
+    if (!object_dynamic_cast(obj, TYPE_CXL_TYPE3)) {
+        error_setg(errp, "Path not point to a valid CXL type3 device");
+        return;
+    }
+
+    dcd = CXL_TYPE3(obj);
+    cxlds = &dcd->cxl_dstate;
+    memset(&dCap, 0, sizeof(dCap));
+
+    if (!dcd->dc.num_regions) {
+        error_setg(errp, "No dynamic capacity support from the device");
+        return;
+    }
+
+    /*
+     * 8.2.9.1.5
+     * All Dynamic Capacity event records shall set the Event Record
+     * Severity field in the Common Event Record Format to Informational
+     * Event. All Dynamic Capacity related events shall be logged in the
+     * Dynamic Capacity Event Log.
+     */
+    assert(flags & (1<<CXL_EVENT_TYPE_INFO));
+    cxl_assign_event_header(hdr, &dynamic_capacity_uuid, flags, sizeof(dCap),
+            cxl_device_get_timestamp(&dcd->cxl_dstate));
+
+    /*
+     * 00h: add capacity
+     * 01h: release capacity
+     * 02h: forced capacity release
+     * 03h: region configuration updated
+     * 04h: Add capacity response
+     * 05h: capacity released
+     **/
+    dCap.type = type;
+    stw_le_p(&dCap.host_id, hid);
+    dCap.updated_region_id = rid;
+    for (i = 0; i < extent_cnt; i++) {
+        extents[i].start_dpa += dcd->dc.regions[rid].base;
+        memcpy(&dCap.dynamic_capacity_extent, &extents[i]
+                , sizeof(CXLDCExtent_raw));
+
+        if (cxl_event_insert(cxlds, CXL_EVENT_TYPE_DYNAMIC_CAP,
+                    (CXLEventRecordRaw *)&dCap)) {
+            ;
+        }
+        cxl_event_irq_assert(dcd);
+    }
+}
+
+#define MEM_BLK_SIZE_MB 128
+void qmp_cxl_add_dynamic_capacity_event(const char *path, uint8_t region_id,
+        uint32_t num_exent, uint64_t dpa, uint64_t extent_len_MB, Error **errp)
+{
+    uint8_t flags = 1 << CXL_EVENT_TYPE_INFO;
+    CXLDCExtent_raw *extents;
+    int i;
+
+    if (extent_len_MB < MEM_BLK_SIZE_MB) {
+        error_setg(errp,
+                "extent size cannot be smaller than memory block size (%dMB)",
+                MEM_BLK_SIZE_MB);
+        return;
+    }
+
+    extents = g_new0(CXLDCExtent_raw, num_exent);
+    for (i = 0; i < num_exent; i++) {
+        extents[i].start_dpa = dpa;
+        extents[i].len = extent_len_MB*1024*1024;
+        memset(extents[i].tag, 0, 0x10);
+        extents[i].shared_seq = 0;
+        dpa += extents[i].len;
+    }
+
+    qmp_cxl_process_dynamic_capacity_event(path, CXL_EVENT_LOG_INFORMATIONAL,
+            flags, 0x0, 0, region_id, num_exent, extents, errp);
+
+    g_free(extents);
+}
+
+void qmp_cxl_release_dynamic_capacity_event(const char *path, uint8_t region_id,
+        uint32_t num_exent, uint64_t dpa, uint64_t extent_len_MB, Error **errp)
+{
+    uint8_t flags = 1 << CXL_EVENT_TYPE_INFO;
+    CXLDCExtent_raw *extents;
+    int i;
+
+    if (extent_len_MB < MEM_BLK_SIZE_MB) {
+        error_setg(errp,
+                "extent size cannot be smaller than memory block size (%dMB)",
+                MEM_BLK_SIZE_MB);
+        return;
+    }
+
+    extents = g_new0(CXLDCExtent_raw, num_exent);
+    for (i = 0; i < num_exent; i++) {
+        extents[i].start_dpa = dpa;
+        extents[i].len = extent_len_MB*1024*1024;
+        memset(extents[i].tag, 0, 0x10);
+        extents[i].shared_seq = 0;
+        dpa += extents[i].len;
+    }
+
+    qmp_cxl_process_dynamic_capacity_event(path, CXL_EVENT_LOG_INFORMATIONAL,
+            flags, 0x1, 0, region_id, num_exent, extents, errp);
+
+    g_free(extents);
 }
 
 static void ct3_class_init(ObjectClass *oc, void *data)
