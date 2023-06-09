@@ -1526,7 +1526,8 @@ static void bg_timercb(void *opaque)
     }
 }
 
-void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
+void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci,
+                            bool is_dcd)
 {
     if (!switch_cci) {
         cxl_dstate->cxl_cmd_set = cxl_cmd_set;
@@ -1534,6 +1535,9 @@ void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci)
         cxl_dstate->cxl_cmd_set = cxl_cmd_set_sw;
     }
     for (int set = 0; set < 256; set++) {
+        if (!is_dcd && set == DCD_CONFIG) {
+            continue;
+        }
         for (int cmd = 0; cmd < 256; cmd++) {
             if (cxl_dstate->cxl_cmd_set[set][cmd].handler) {
                 struct cxl_cmd *c = &cxl_dstate->cxl_cmd_set[set][cmd];

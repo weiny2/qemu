@@ -1276,9 +1276,11 @@ static void ct3d_reset(DeviceState *dev)
     CXLType3Dev *ct3d = CXL_TYPE3(dev);
     uint32_t *reg_state = ct3d->cxl_cstate.crb.cache_mem_registers;
     uint32_t *write_msk = ct3d->cxl_cstate.crb.cache_mem_regs_write_mask;
+    bool is_dcd;
 
     cxl_component_register_init_common(reg_state, write_msk, CXL2_TYPE3_DEVICE);
-    cxl_device_register_init_common(&ct3d->cxl_dstate);
+    is_dcd = (ct3d->dc.num_regions != 0);
+    cxl_device_register_init_common(&ct3d->cxl_dstate, is_dcd);
 }
 
 static Property ct3_props[] = {

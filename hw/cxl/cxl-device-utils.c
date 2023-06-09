@@ -288,7 +288,7 @@ static void mailbox_reg_init_common(CXLDeviceState *cxl_dstate)
 
 static void memdev_reg_init_common(CXLDeviceState *cxl_dstate) { }
 
-void cxl_device_register_init_common(CXLDeviceState *cxl_dstate)
+void cxl_device_register_init_common(CXLDeviceState *cxl_dstate, bool is_dcd)
 {
     uint64_t *cap_hdrs = cxl_dstate->caps_reg_state64;
     const int cap_count = 3;
@@ -307,7 +307,7 @@ void cxl_device_register_init_common(CXLDeviceState *cxl_dstate)
     cxl_device_cap_init(cxl_dstate, MEMORY_DEVICE, 0x4000, 1);
     memdev_reg_init_common(cxl_dstate);
 
-    cxl_initialize_mailbox(cxl_dstate, false);
+    cxl_initialize_mailbox(cxl_dstate, false, is_dcd);
 }
 
 void cxl_device_register_init_swcci(CXLDeviceState *cxl_dstate)
@@ -329,7 +329,7 @@ void cxl_device_register_init_swcci(CXLDeviceState *cxl_dstate)
     cxl_device_cap_init(cxl_dstate, MEMORY_DEVICE, 0x4000, 1);
     memdev_reg_init_common(cxl_dstate);
 
-    cxl_initialize_mailbox(cxl_dstate, true);
+    cxl_initialize_mailbox(cxl_dstate, true, false);
 }
 
 uint64_t cxl_device_get_timestamp(CXLDeviceState *cxl_dstate)

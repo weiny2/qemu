@@ -233,7 +233,7 @@ typedef struct cxl_device_state {
 void cxl_device_register_block_init(Object *obj, CXLDeviceState *dev);
 
 /* Set up default values for the register block */
-void cxl_device_register_init_common(CXLDeviceState *dev);
+void cxl_device_register_init_common(CXLDeviceState *dev, bool is_dcd);
 void cxl_device_register_init_swcci(CXLDeviceState *dev);
 
 /*
@@ -280,7 +280,7 @@ CXL_DEVICE_CAPABILITY_HEADER_REGISTER(MEMORY_DEVICE,
                                       CXL_DEVICE_CAP_HDR1_OFFSET +
                                           CXL_DEVICE_CAP_REG_SIZE * 2)
 
-void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci);
+void cxl_initialize_mailbox(CXLDeviceState *cxl_dstate, bool switch_cci, bool is_dcd);
 void cxl_process_mailbox(CXLDeviceState *cxl_dstate);
 
 #define cxl_device_cap_init(dstate, reg, cap_id, ver)                      \
